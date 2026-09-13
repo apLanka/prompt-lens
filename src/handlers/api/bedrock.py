@@ -37,34 +37,19 @@ def invoke_model(
 
     start_time = time.time()
 
-    # Prepare request body based on model type
-    if "claude" in model_id.lower():
-        body = json.dumps(
-            {
-                "prompt": prompt,
-                "max_tokens_to_sample": max_tokens,
-                "temperature": temperature,
-            }
-        )
-        content_type = "application/json"
-        accept = "application/json"
-    else:
-        # Default to Claude-like format for other models
-        body = json.dumps(
-            {
-                "prompt": prompt,
-                "max_tokens_to_sample": max_tokens,
-                "temperature": temperature,
-            }
-        )
-        content_type = "application/json"
-        accept = "application/json"
+    body = json.dumps(
+        {
+            "prompt": prompt,
+            "max_tokens_to_sample": max_tokens,
+            "temperature": temperature,
+        }
+    )
 
     response = client.invoke_model(
         modelId=model_id,
         body=body,
-        contentType=content_type,
-        accept=accept,
+        contentType="application/json",
+        accept="application/json",
     )
 
     latency_ms = (time.time() - start_time) * 1000
@@ -97,8 +82,6 @@ def evaluate_output(
     Returns:
         Dictionary with score, confidence, rationale, violations
 
-    Raises:
-        ValueError: If response cannot be parsed
     """
     client = get_bedrock_client()
 
@@ -118,23 +101,13 @@ Provide your evaluation as a JSON object with exactly these fields:
 
 Respond ONLY with the JSON object, no other text."""
 
-    # Prepare request body
-    if "claude" in model_id.lower():
-        body = json.dumps(
-            {
-                "prompt": evaluation_prompt,
-                "max_tokens_to_sample": 1024,
-                "temperature": temperature,
-            }
-        )
-    else:
-        body = json.dumps(
-            {
-                "prompt": evaluation_prompt,
-                "max_tokens_to_sample": 1024,
-                "temperature": temperature,
-            }
-        )
+    body = json.dumps(
+        {
+            "prompt": evaluation_prompt,
+            "max_tokens_to_sample": 1024,
+            "temperature": temperature,
+        }
+    )
 
     response = client.invoke_model(
         modelId=model_id,
