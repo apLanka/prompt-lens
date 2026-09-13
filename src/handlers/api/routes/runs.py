@@ -124,6 +124,31 @@ def create_run_handler(event: Dict[str, Any]) -> Dict[str, Any]:
     return _response(201, json.dumps(run.to_response()))
 
 
+def _compute_summary(results: list) -> dict:
+    """Compute classification summary from results."""
+    summary = {
+        "total": len(results),
+        "improved": 0,
+        "regressed": 0,
+        "unchanged": 0,
+        "needsReview": 0,
+        "failed": 0,
+    }
+    for r in results:
+        classification = r.classification if hasattr(r, "classification") else "Failed"
+        if classification == "Improved":
+            summary["improved"] += 1
+        elif classification == "Regressed":
+            summary["regressed"] += 1
+        elif classification == "Unchanged":
+            summary["unchanged"] += 1
+        elif classification == "Needs review":
+            summary["needsReview"] += 1
+        elif classification == "Failed":
+            summary["failed"] += 1
+    return summary
+
+
 def get_run_handler(run_id: str) -> Dict[str, Any]:
     """Get a run with its results."""
     run = get_run(run_id)
@@ -133,6 +158,7 @@ def get_run_handler(run_id: str) -> Dict[str, Any]:
     results = get_run_case_results(run_id)
     response = run.to_response()
     response["results"] = [r.to_response() for r in results]
+    response["summary"] = _compute_summary(results)
 
     return _response(200, json.dumps(response))
 
