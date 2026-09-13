@@ -356,8 +356,10 @@ def get_run(run_id: str) -> Optional[Run]:
     return Run.from_dict(_deserialize_from_dynamodb(item))
 
 
-def list_runs() -> List[Run]:
-    """List all runs."""
+def list_runs(
+    status: Optional[str] = None, suite_id: Optional[str] = None
+) -> List[Run]:
+    """List all runs with optional filtering."""
     table = get_table()
 
     items: List[dict] = []
@@ -375,11 +377,18 @@ def list_runs() -> List[Run]:
         )
         items.extend(response.get("Items", []))
 
-    return [
+    runs = [
         Run.from_dict(_deserialize_from_dynamodb(item))
         for item in items
         if item.get("PK", "").startswith("RUN#")
     ]
+
+    if status:
+        runs = [r for r in runs if r.status == status]
+    if suite_id:
+        runs = [r for r in runs if r.suite_id == suite_id]
+
+    return runs
 
 
 def update_run_status(run_id: str, status: str) -> Optional[Run]:

@@ -65,9 +65,18 @@ def handle_run_by_id(event: Dict[str, Any]) -> Dict[str, Any]:
         return _response(405, json.dumps({"message": "Method not allowed"}))
 
 
-def list_runs_handler() -> Dict[str, Any]:
-    """List all runs."""
-    runs = list_runs()
+def get_query_params(event: Dict[str, Any]) -> Dict[str, str]:
+    """Extract query string parameters."""
+    return event.get("queryStringParameters") or {}
+
+
+def list_runs_handler(event: Dict[str, Any] = None) -> Dict[str, Any]:
+    """List all runs with optional filtering."""
+    params = get_query_params(event or {})
+    status = params.get("status")
+    suite_id = params.get("suiteId")
+
+    runs = list_runs(status=status, suite_id=suite_id)
     return _response(200, json.dumps([r.to_response() for r in runs]))
 
 

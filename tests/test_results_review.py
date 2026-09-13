@@ -104,3 +104,58 @@ class TestRunSummary:
         assert body["summary"]["unchanged"] == 0
         assert body["summary"]["needsReview"] == 0
         assert body["summary"]["failed"] == 0
+
+
+class TestListRunsFiltering:
+    """Test filtering in list_runs."""
+
+    def test_list_runs_filter_by_status(self, aws_setup):
+        """Should filter runs by status."""
+        for i, status in enumerate(["COMPLETED", "FAILED", "COMPLETED"]):
+            run = Run(
+                suite_id="suite-1",
+                model_id="anthropic.claude-3-sonnet",
+                baseline_prompt="Baseline",
+                candidate_prompt="Candidate",
+                rubric="Rubric",
+            )
+            run.status = status
+            if status in ["COMPLETED", "FAILED"]:
+                run.completed_at = "2026-09-13T10:00:00Z"
+            create_run(run)
+
+        from src.handlers.api.routes.runs import list_runs_handler
+        from unittest.mock import patch
+
+        with patch(
+            "src.handlers.api.routes.runs.get_query_params",
+            return_value={"status": "COMPLETED"},
+        ):
+            response = list_runs_handler()
+            body = json.loads(response["body"])
+            assert len(body) == 2
+            assert all(r["status"] == "COMPLETED" for r in body)
+
+    def test_list_runs_filter_by_suite(self, aws_setup):
+        """Should filter runs by suite_id."""
+        for suite_id in ["suite-1", "suite-2", "suite-1"]:
+            run = Run(
+                suite_id=suite_id,
+                model_id="anthropic.claude-3-sonnet",
+                baseline_prompt="Baseline",
+                candidate_prompt="Candidate",
+                rubric="Rubric",
+            )
+            create_run(run)
+
+        from src.handlers.api.routes.runs import list_runs_handler
+        from unittest.mock import patch
+
+        with patch(
+            "src.handlers.api.routes.runs.get_query_params",
+            return_value={"suiteId": "suite-1"},
+        ):
+            response = list_runs_handler()
+            body = json.loads(response["body"])
+            assert len(body) == 2
+            assert all(r["suiteId"] == "suite-1" for r in body)
