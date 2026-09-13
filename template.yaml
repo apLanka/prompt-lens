@@ -125,3 +125,23 @@ Outputs:
   ApiEndpoint:
     Description: API Gateway endpoint URL
     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
+    Export:
+      Name: PromptLensApiEndpoint
+
+  DynamoDBTableName:
+    Description: DynamoDB table name
+    Value: !Ref PromptLensTable
+    Export:
+      Name: PromptLensTableName
+
+  LambdaFunctionName:
+    Description: Lambda function name
+    Value: !Ref ApiFunction
+    Export:
+      Name: PromptLensFunctionName
+
+  IAMRoleArn:
+    Description: IAM execution role ARN
+    Value: !GetAtt LambdaExecutionRole.Arn
+    Export:
+      Name: PromptLensRoleArn
