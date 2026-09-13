@@ -450,12 +450,21 @@ def delete_run(run_id: str) -> bool:
     """Delete run and all its case results."""
     table = get_table()
 
+    items: List[dict] = []
     response = table.query(
         KeyConditionExpression=Key("PK").eq(f"RUN#{run_id}"),
     )
+    items.extend(response.get("Items", []))
+
+    while "LastEvaluatedKey" in response:
+        response = table.query(
+            KeyConditionExpression=Key("PK").eq(f"RUN#{run_id}"),
+            ExclusiveStartKey=response["LastEvaluatedKey"],
+        )
+        items.extend(response.get("Items", []))
 
     with table.batch_writer() as batch:
-        for item in response.get("Items", []):
+        for item in items:
             batch.delete_item(
                 Key={
                     "PK": item["PK"],
