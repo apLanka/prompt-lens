@@ -287,3 +287,78 @@ class TestCaseResultFiltering:
         results = get_run_case_results(created_run.run_id, classification="Failed")
         assert len(results) == 1
         assert results[0].classification == "Failed"
+
+
+class TestFilteredEndpoints:
+    """Test filtered API endpoints."""
+
+    def test_get_run_with_classification_filter(self, aws_setup):
+        """GET /runs/{runId}?classification=Improved should return only improved results."""
+        run = Run(
+            suite_id="suite-1",
+            model_id="anthropic.claude-3-sonnet",
+            baseline_prompt="Baseline",
+            candidate_prompt="Candidate",
+            rubric="Rubric",
+        )
+        created_run = create_run(run)
+
+        # Create mixed results
+        for i, classification in enumerate(["Improved", "Regressed"]):
+            result = RunCaseResult(
+                run_id=created_run.run_id,
+                case_id=f"case-{i}",
+                baseline_output=f"Output {i}",
+                candidate_output=f"Candidate {i}",
+                baseline_score=3,
+                candidate_score=4 if classification == "Improved" else 2,
+                baseline_rationale="Rationale",
+                candidate_rationale="Rationale",
+                baseline_latency_ms=100,
+                candidate_latency_ms=120,
+                classification=classification,
+            )
+            create_run_case_result(result)
+
+        from src.handlers.api.routes.runs import handle_run_by_id
+
+        event = {
+            "httpMethod": "GET",
+            "pathParameters": {"runId": created_run.run_id},
+            "queryStringParameters": {"classification": "Improved"},
+        }
+        response = handle_run_by_id(event)
+        body = json.loads(response["body"])
+
+        assert len(body["results"]) == 1
+        assert body["results"][0]["classification"] == "Improved"
+        # Summary should reflect filtered results
+        assert body["summary"]["improved"] == 1
+        assert body["summary"]["regressed"] == 0
+
+    def test_list_runs_with_status_filter(self, aws_setup):
+        """GET /runs?status=COMPLETED should return only completed runs."""
+        for i, status in enumerate(["COMPLETED", "FAILED"]):
+            run = Run(
+                suite_id="suite-1",
+                model_id="anthropic.claude-3-sonnet",
+                baseline_prompt="Baseline",
+                candidate_prompt="Candidate",
+                rubric="Rubric",
+            )
+            run.status = status
+            if status in ["COMPLETED", "FAILED"]:
+                run.completed_at = "2026-09-13T10:00:00Z"
+            create_run(run)
+
+        from src.handlers.api.routes.runs import handle_runs
+
+        event = {
+            "httpMethod": "GET",
+            "queryStringParameters": {"status": "COMPLETED"},
+        }
+        response = handle_runs(event)
+        body = json.loads(response["body"])
+
+        assert len(body) == 1
+        assert body[0]["status"] == "COMPLETED"

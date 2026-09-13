@@ -53,12 +53,13 @@ def handle_run_by_id(event: Dict[str, Any]) -> Dict[str, Any]:
     """Handle /runs/{runId} routes."""
     method = event.get("httpMethod")
     run_id = event.get("pathParameters", {}).get("runId")
+    classification = (event.get("queryStringParameters") or {}).get("classification")
 
     if not run_id:
         return _response(400, json.dumps({"message": "runId is required"}))
 
     if method == "GET":
-        return get_run_handler(run_id)
+        return get_run_handler(run_id, classification=classification)
     elif method == "DELETE":
         return delete_run_handler(run_id)
     else:
