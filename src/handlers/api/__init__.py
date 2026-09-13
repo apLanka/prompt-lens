@@ -2,7 +2,11 @@
 
 import json
 import os
+import re
 from typing import Any, Dict
+
+from .routes.suites import handle_suites, handle_suite_by_id
+from .routes.cases import handle_cases, handle_case_by_id
 
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -15,10 +19,11 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     Returns:
         API Gateway response
     """
-    table_name = os.environ.get("TABLE_NAME", "PromptLens")
+    path = event.get("path", "")
+    method = event.get("httpMethod", "")
 
     # Health check endpoint
-    if event.get("path") == "/health":
+    if path == "/health":
         return {
             "statusCode": 200,
             "headers": {
@@ -28,10 +33,48 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "body": json.dumps(
                 {
                     "status": "healthy",
-                    "table": table_name,
+                    "table": os.environ.get("TABLE_NAME", "PromptLens"),
                 }
             ),
         }
+
+    # OPTIONS request for CORS
+    if method == "OPTIONS":
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type",
+            },
+            "body": "",
+        }
+
+    # Route matching
+    # /suites/{suiteId}/cases/{caseId}
+    case_match = re.match(r"^/suites/([^/]+)/cases/([^/]+)$", path)
+    if case_match:
+        event["pathParameters"] = {
+            "suiteId": case_match.group(1),
+            "caseId": case_match.group(2),
+        }
+        return handle_case_by_id(event)
+
+    # /suites/{suiteId}/cases
+    cases_match = re.match(r"^/suites/([^/]+)/cases$", path)
+    if cases_match:
+        event["pathParameters"] = {"suiteId": cases_match.group(1)}
+        return handle_cases(event)
+
+    # /suites/{suiteId}
+    suite_match = re.match(r"^/suites/([^/]+)$", path)
+    if suite_match:
+        event["pathParameters"] = {"suiteId": suite_match.group(1)}
+        return handle_suite_by_id(event)
+
+    # /suites
+    if path == "/suites":
+        return handle_suites(event)
 
     # Default response for unimplemented routes
     return {
