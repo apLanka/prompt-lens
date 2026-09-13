@@ -21,7 +21,7 @@ export default function SuiteEditorScreen() {
     setError("");
     try {
       const s = await getSuite(suiteId);
-      setSuite(s);
+      setSuite({ ...s, cases: s.cases.map((c) => ({ ...c, tags: c.tags ?? [] })) });
       setNameDraft(s.name);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not load the suite.");
@@ -143,7 +143,7 @@ function CaseRow({
   const save = () =>
     onPatch(caseData.caseId, {
       input,
-      expectedBehavior: expected || undefined,
+      expectedBehavior: expected,
       tags: caseData.tags,
     });
 
