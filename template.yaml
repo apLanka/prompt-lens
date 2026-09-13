@@ -44,11 +44,6 @@ Resources:
             Path: /
             Method: ANY
             RestApiId: !Ref ServerlessRestApi
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref PromptLensTable
-        - BedrockInvokeModelPolicy:
-            ModelId: "*"
 
   PromptLensTable:
     Type: AWS::DynamoDB::Table

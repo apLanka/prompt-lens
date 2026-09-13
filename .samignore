@@ -1,0 +1,11 @@
+# SAM build exclusions
+.git/
+README.md
+template.yaml
+docs/
+.superpowers/
+tests/
+.claude/
+*.md
+.gitignore
+.samignore
