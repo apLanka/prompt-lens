@@ -159,3 +159,52 @@ class TestListRunsFiltering:
             body = json.loads(response["body"])
             assert len(body) == 2
             assert all(r["suiteId"] == "suite-1" for r in body)
+
+    def test_list_runs_with_real_event_filters_by_status(self, aws_setup):
+        """Integration test: event passthrough extracts filters from queryStringParameters."""
+        for status in ["COMPLETED", "FAILED", "COMPLETED"]:
+            run = Run(
+                suite_id="suite-1",
+                model_id="anthropic.claude-3-sonnet",
+                baseline_prompt="Baseline",
+                candidate_prompt="Candidate",
+                rubric="Rubric",
+            )
+            run.status = status
+            if status in ["COMPLETED", "FAILED"]:
+                run.completed_at = "2026-09-13T10:00:00Z"
+            create_run(run)
+
+        from src.handlers.api.routes.runs import list_runs_handler
+
+        event = {
+            "httpMethod": "GET",
+            "queryStringParameters": {"status": "COMPLETED"},
+        }
+        response = list_runs_handler(event)
+        body = json.loads(response["body"])
+        assert len(body) == 2
+        assert all(r["status"] == "COMPLETED" for r in body)
+
+    def test_list_runs_with_real_event_filters_by_suite(self, aws_setup):
+        """Integration test: event passthrough extracts suiteId from queryStringParameters."""
+        for suite_id in ["suite-1", "suite-2", "suite-1"]:
+            run = Run(
+                suite_id=suite_id,
+                model_id="anthropic.claude-3-sonnet",
+                baseline_prompt="Baseline",
+                candidate_prompt="Candidate",
+                rubric="Rubric",
+            )
+            create_run(run)
+
+        from src.handlers.api.routes.runs import list_runs_handler
+
+        event = {
+            "httpMethod": "GET",
+            "queryStringParameters": {"suiteId": "suite-1"},
+        }
+        response = list_runs_handler(event)
+        body = json.loads(response["body"])
+        assert len(body) == 2
+        assert all(r["suiteId"] == "suite-1" for r in body)

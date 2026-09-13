@@ -42,7 +42,7 @@ def handle_runs(event: Dict[str, Any]) -> Dict[str, Any]:
     method = event.get("httpMethod")
 
     if method == "GET":
-        return list_runs_handler()
+        return list_runs_handler(event)
     elif method == "POST":
         return create_run_handler(event)
     else:
