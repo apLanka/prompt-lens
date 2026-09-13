@@ -1,10 +1,28 @@
 """Case route handlers."""
 
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from ..models import Case
 from ..dynamodb import get_suite, create_case, get_case, update_case, delete_case
+
+_DEFAULT_HEADERS = {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+}
+
+
+def _response(
+    status_code: int, body: Any = "", extra_headers: Optional[Dict[str, str]] = None
+) -> Dict[str, Any]:
+    headers = {**_DEFAULT_HEADERS}
+    if extra_headers:
+        headers.update(extra_headers)
+    return {
+        "statusCode": status_code,
+        "headers": headers,
+        "body": body,
+    }
 
 
 def handle_cases(event: Dict[str, Any]) -> Dict[str, Any]:
@@ -13,38 +31,16 @@ def handle_cases(event: Dict[str, Any]) -> Dict[str, Any]:
     suite_id = event.get("pathParameters", {}).get("suiteId")
 
     if not suite_id:
-        return {
-            "statusCode": 400,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-            },
-            "body": json.dumps({"message": "suiteId is required"}),
-        }
+        return _response(400, json.dumps({"message": "suiteId is required"}))
 
-    # Verify suite exists
     suite = get_suite(suite_id)
     if not suite:
-        return {
-            "statusCode": 404,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-            },
-            "body": json.dumps({"message": "Suite not found"}),
-        }
+        return _response(404, json.dumps({"message": "Suite not found"}))
 
     if method == "POST":
         return create_case_handler(event, suite_id)
     else:
-        return {
-            "statusCode": 405,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-            },
-            "body": json.dumps({"message": "Method not allowed"}),
-        }
+        return _response(405, json.dumps({"message": "Method not allowed"}))
 
 
 def handle_case_by_id(event: Dict[str, Any]) -> Dict[str, Any]:
@@ -54,40 +50,20 @@ def handle_case_by_id(event: Dict[str, Any]) -> Dict[str, Any]:
     case_id = event.get("pathParameters", {}).get("caseId")
 
     if not suite_id or not case_id:
-        return {
-            "statusCode": 400,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-            },
-            "body": json.dumps({"message": "suiteId and caseId are required"}),
-        }
+        return _response(
+            400, json.dumps({"message": "suiteId and caseId are required"})
+        )
 
-    # Verify suite exists
     suite = get_suite(suite_id)
     if not suite:
-        return {
-            "statusCode": 404,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-            },
-            "body": json.dumps({"message": "Suite not found"}),
-        }
+        return _response(404, json.dumps({"message": "Suite not found"}))
 
     if method == "PATCH":
         return update_case_handler(event, suite_id, case_id)
     elif method == "DELETE":
         return delete_case_handler(suite_id, case_id)
     else:
-        return {
-            "statusCode": 405,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-            },
-            "body": json.dumps({"message": "Method not allowed"}),
-        }
+        return _response(405, json.dumps({"message": "Method not allowed"}))
 
 
 def create_case_handler(event: Dict[str, Any], suite_id: str) -> Dict[str, Any]:
@@ -95,25 +71,11 @@ def create_case_handler(event: Dict[str, Any], suite_id: str) -> Dict[str, Any]:
     try:
         body = json.loads(event.get("body", "{}"))
     except json.JSONDecodeError:
-        return {
-            "statusCode": 400,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-            },
-            "body": json.dumps({"message": "Invalid JSON"}),
-        }
+        return _response(400, json.dumps({"message": "Invalid JSON"}))
 
     input_text = body.get("input")
     if not input_text:
-        return {
-            "statusCode": 400,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-            },
-            "body": json.dumps({"message": "input is required"}),
-        }
+        return _response(400, json.dumps({"message": "input is required"}))
 
     case = Case(
         suite_id=suite_id,
@@ -124,14 +86,7 @@ def create_case_handler(event: Dict[str, Any], suite_id: str) -> Dict[str, Any]:
 
     created = create_case(case)
 
-    return {
-        "statusCode": 201,
-        "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-        },
-        "body": json.dumps(created.to_response()),
-    }
+    return _response(201, json.dumps(created.to_response()))
 
 
 def update_case_handler(
@@ -140,37 +95,16 @@ def update_case_handler(
     """Update a case."""
     existing = get_case(suite_id, case_id)
     if not existing:
-        return {
-            "statusCode": 404,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-            },
-            "body": json.dumps({"message": "Case not found"}),
-        }
+        return _response(404, json.dumps({"message": "Case not found"}))
 
     try:
         body = json.loads(event.get("body", "{}"))
     except json.JSONDecodeError:
-        return {
-            "statusCode": 400,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-            },
-            "body": json.dumps({"message": "Invalid JSON"}),
-        }
+        return _response(400, json.dumps({"message": "Invalid JSON"}))
 
     input_text = body.get("input")
     if not input_text:
-        return {
-            "statusCode": 400,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-            },
-            "body": json.dumps({"message": "input is required"}),
-        }
+        return _response(400, json.dumps({"message": "input is required"}))
 
     updated = update_case(
         suite_id=suite_id,
@@ -180,35 +114,14 @@ def update_case_handler(
         tags=body.get("tags"),
     )
 
-    return {
-        "statusCode": 200,
-        "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-        },
-        "body": json.dumps(updated.to_response()),
-    }
+    return _response(200, json.dumps(updated.to_response()))
 
 
 def delete_case_handler(suite_id: str, case_id: str) -> Dict[str, Any]:
     """Delete a case."""
     existing = get_case(suite_id, case_id)
     if not existing:
-        return {
-            "statusCode": 404,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-            },
-            "body": json.dumps({"message": "Case not found"}),
-        }
+        return _response(404, json.dumps({"message": "Case not found"}))
 
     delete_case(suite_id, case_id)
-    return {
-        "statusCode": 204,
-        "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-        },
-        "body": "",
-    }
+    return _response(204, "")
