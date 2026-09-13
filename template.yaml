@@ -13,6 +13,43 @@ Globals:
         TABLE_NAME: !Ref PromptLensTable
 
 Resources:
+  ServerlessRestApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Cors:
+        AllowMethods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowOrigin: "'*'"
+      TracingEnabled: true
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: PromptLensApi
+      Handler: src.handlers.api.handler
+      CodeUri: .
+      Description: PromptLens API Handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        CatchAll:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+            RestApiId: !Ref ServerlessRestApi
+        Root:
+          Type: Api
+          Properties:
+            Path: /
+            Method: ANY
+            RestApiId: !Ref ServerlessRestApi
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PromptLensTable
+        - BedrockInvokeModelPolicy:
+            ModelId: "*"
+
   PromptLensTable:
     Type: AWS::DynamoDB::Table
     Properties:
