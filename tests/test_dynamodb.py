@@ -339,3 +339,436 @@ class TestGetTable:
         os.environ["TABLE_NAME"] = "CustomTable"
         table = dynamodb.get_table()
         assert table.name == "CustomTable"
+
+
+class TestCreateRun:
+    def test_create_run(self, aws_setup):
+        from src.handlers.api.models import Run
+
+        run = Run(
+            suite_id="suite-123",
+            model_id="anthropic.claude-3-sonnet",
+            baseline_prompt="You are helpful",
+            candidate_prompt="You are very helpful",
+            rubric="Rate the response 1-5",
+        )
+        result = dynamodb.create_run(run)
+
+        assert result.run_id == run.run_id
+        assert result.suite_id == "suite-123"
+        assert result.model_id == "anthropic.claude-3-sonnet"
+        assert result.status == "RUNNING"
+
+    def test_create_run_verifies_dynamodb_item(self, aws_setup):
+        from src.handlers.api.models import Run
+
+        run = Run(
+            suite_id="suite-abc",
+            model_id="anthropic.claude-3-opus",
+            baseline_prompt="baseline",
+            candidate_prompt="candidate",
+            rubric="rubric",
+        )
+        dynamodb.create_run(run)
+
+        table = dynamodb.get_table()
+        response = table.get_item(Key={"PK": f"RUN#{run.run_id}", "SK": "META"})
+        item = response["Item"]
+        assert item["suite_id"] == "suite-abc"
+        assert item["model_id"] == "anthropic.claude-3-opus"
+        assert item["baseline_prompt"] == "baseline"
+
+
+class TestGetRun:
+    def test_get_existing_run(self, aws_setup):
+        from src.handlers.api.models import Run
+
+        run = Run(
+            suite_id="suite-1",
+            model_id="model-1",
+            baseline_prompt="bp",
+            candidate_prompt="cp",
+            rubric="r",
+        )
+        dynamodb.create_run(run)
+
+        result = dynamodb.get_run(run.run_id)
+        assert result is not None
+        assert result.run_id == run.run_id
+        assert result.suite_id == "suite-1"
+        assert result.status == "RUNNING"
+
+    def test_get_nonexistent_run(self, aws_setup):
+        result = dynamodb.get_run("nonexistent-id")
+        assert result is None
+
+    def test_get_run_with_optional_fields(self, aws_setup):
+        from src.handlers.api.models import Run
+
+        run = Run(
+            suite_id="s",
+            model_id="m",
+            baseline_prompt="bp",
+            candidate_prompt="cp",
+            rubric="r",
+            temperature=0.5,
+            max_tokens=2048,
+        )
+        dynamodb.create_run(run)
+
+        result = dynamodb.get_run(run.run_id)
+        assert result.temperature == 0.5
+        assert result.max_tokens == 2048
+
+
+class TestListRuns:
+    def test_list_empty(self, aws_setup):
+        result = dynamodb.list_runs()
+        assert result == []
+
+    def test_list_multiple_runs(self, aws_setup):
+        from src.handlers.api.models import Run
+
+        run1 = Run(
+            suite_id="s1",
+            model_id="m1",
+            baseline_prompt="bp1",
+            candidate_prompt="cp1",
+            rubric="r1",
+        )
+        run2 = Run(
+            suite_id="s2",
+            model_id="m2",
+            baseline_prompt="bp2",
+            candidate_prompt="cp2",
+            rubric="r2",
+        )
+        dynamodb.create_run(run1)
+        dynamodb.create_run(run2)
+
+        result = dynamodb.list_runs()
+        assert len(result) == 2
+        run_ids = {r.run_id for r in result}
+        assert run_ids == {run1.run_id, run2.run_id}
+
+    def test_list_runs_only_returns_runs(self, aws_setup):
+        from src.handlers.api.models import Run, Suite
+
+        # Create a suite (also has SK=META)
+        suite = Suite(name="Test Suite")
+        dynamodb.create_suite(suite)
+
+        # Create a run
+        run = Run(
+            suite_id=suite.suite_id,
+            model_id="model",
+            baseline_prompt="bp",
+            candidate_prompt="cp",
+            rubric="r",
+        )
+        dynamodb.create_run(run)
+
+        result = dynamodb.list_runs()
+        assert len(result) == 1
+        assert result[0].run_id == run.run_id
+
+
+class TestUpdateRunStatus:
+    def test_update_to_completed(self, aws_setup):
+        from src.handlers.api.models import Run
+
+        run = Run(
+            suite_id="s",
+            model_id="m",
+            baseline_prompt="bp",
+            candidate_prompt="cp",
+            rubric="r",
+        )
+        dynamodb.create_run(run)
+
+        result = dynamodb.update_run_status(run.run_id, "COMPLETED")
+        assert result.status == "COMPLETED"
+        assert result.completed_at is not None
+
+    def test_update_to_running(self, aws_setup):
+        from src.handlers.api.models import Run
+
+        run = Run(
+            suite_id="s",
+            model_id="m",
+            baseline_prompt="bp",
+            candidate_prompt="cp",
+            rubric="r",
+        )
+        dynamodb.create_run(run)
+
+        result = dynamodb.update_run_status(run.run_id, "RUNNING")
+        assert result.status == "RUNNING"
+        assert result.completed_at is None
+
+    def test_update_to_failed(self, aws_setup):
+        from src.handlers.api.models import Run
+
+        run = Run(
+            suite_id="s",
+            model_id="m",
+            baseline_prompt="bp",
+            candidate_prompt="cp",
+            rubric="r",
+        )
+        dynamodb.create_run(run)
+
+        result = dynamodb.update_run_status(run.run_id, "FAILED")
+        assert result.status == "FAILED"
+        assert result.completed_at is not None
+
+    def test_update_to_partial(self, aws_setup):
+        from src.handlers.api.models import Run
+
+        run = Run(
+            suite_id="s",
+            model_id="m",
+            baseline_prompt="bp",
+            candidate_prompt="cp",
+            rubric="r",
+        )
+        dynamodb.create_run(run)
+
+        result = dynamodb.update_run_status(run.run_id, "PARTIAL")
+        assert result.status == "PARTIAL"
+        assert result.completed_at is not None
+
+
+class TestCreateRunCaseResult:
+    def test_create_result(self, aws_setup):
+        from src.handlers.api.models import Run, RunCaseResult
+
+        run = Run(
+            suite_id="s",
+            model_id="m",
+            baseline_prompt="bp",
+            candidate_prompt="cp",
+            rubric="r",
+        )
+        dynamodb.create_run(run)
+
+        result = RunCaseResult(
+            run_id=run.run_id,
+            case_id="case-1",
+            baseline_output="baseline out",
+            candidate_output="candidate out",
+            baseline_score=3,
+            candidate_score=4,
+            classification="Improved",
+        )
+        saved = dynamodb.create_run_case_result(result)
+
+        assert saved.run_id == run.run_id
+        assert saved.case_id == "case-1"
+        assert saved.classification == "Improved"
+
+    def test_create_result_with_optional_fields(self, aws_setup):
+        from decimal import Decimal
+        from src.handlers.api.models import Run, RunCaseResult
+
+        run = Run(
+            suite_id="s",
+            model_id="m",
+            baseline_prompt="bp",
+            candidate_prompt="cp",
+            rubric="r",
+        )
+        dynamodb.create_run(run)
+
+        result = RunCaseResult(
+            run_id=run.run_id,
+            case_id="case-2",
+            baseline_output="base",
+            candidate_output="cand",
+            baseline_score=2,
+            candidate_score=5,
+            baseline_rationale="rationale base",
+            candidate_rationale="rationale cand",
+            baseline_latency_ms=150.5,
+            candidate_latency_ms=200.3,
+            classification="Improved",
+        )
+        saved = dynamodb.create_run_case_result(result)
+
+        table = dynamodb.get_table()
+        response = table.get_item(Key={"PK": f"RUN#{run.run_id}", "SK": "CASE#case-2"})
+        item = response["Item"]
+        assert item["baseline_rationale"] == "rationale base"
+        assert item["candidate_latency_ms"] == Decimal("200.3")
+
+    def test_create_result_with_error(self, aws_setup):
+        from src.handlers.api.models import Run, RunCaseResult
+
+        run = Run(
+            suite_id="s",
+            model_id="m",
+            baseline_prompt="bp",
+            candidate_prompt="cp",
+            rubric="r",
+        )
+        dynamodb.create_run(run)
+
+        result = RunCaseResult(
+            run_id=run.run_id,
+            case_id="case-3",
+            classification="Failed",
+            error="Timeout error",
+        )
+        saved = dynamodb.create_run_case_result(result)
+        assert saved.error == "Timeout error"
+
+
+class TestGetRunCaseResults:
+    def test_get_results_empty(self, aws_setup):
+        from src.handlers.api.models import Run
+
+        run = Run(
+            suite_id="s",
+            model_id="m",
+            baseline_prompt="bp",
+            candidate_prompt="cp",
+            rubric="r",
+        )
+        dynamodb.create_run(run)
+
+        result = dynamodb.get_run_case_results(run.run_id)
+        assert result == []
+
+    def test_get_results_multiple(self, aws_setup):
+        from src.handlers.api.models import Run, RunCaseResult
+
+        run = Run(
+            suite_id="s",
+            model_id="m",
+            baseline_prompt="bp",
+            candidate_prompt="cp",
+            rubric="r",
+        )
+        dynamodb.create_run(run)
+
+        result1 = RunCaseResult(
+            run_id=run.run_id, case_id="c1", classification="Unchanged"
+        )
+        result2 = RunCaseResult(
+            run_id=run.run_id, case_id="c2", classification="Improved"
+        )
+        dynamodb.create_run_case_result(result1)
+        dynamodb.create_run_case_result(result2)
+
+        results = dynamodb.get_run_case_results(run.run_id)
+        assert len(results) == 2
+        case_ids = {r.case_id for r in results}
+        assert case_ids == {"c1", "c2"}
+
+    def test_get_results_only_for_specified_run(self, aws_setup):
+        from src.handlers.api.models import Run, RunCaseResult
+
+        run1 = Run(
+            suite_id="s",
+            model_id="m",
+            baseline_prompt="bp",
+            candidate_prompt="cp",
+            rubric="r",
+        )
+        run2 = Run(
+            suite_id="s",
+            model_id="m",
+            baseline_prompt="bp",
+            candidate_prompt="cp",
+            rubric="r",
+        )
+        dynamodb.create_run(run1)
+        dynamodb.create_run(run2)
+
+        r1 = RunCaseResult(run_id=run1.run_id, case_id="c1", classification="Unchanged")
+        r2 = RunCaseResult(run_id=run2.run_id, case_id="c2", classification="Improved")
+        dynamodb.create_run_case_result(r1)
+        dynamodb.create_run_case_result(r2)
+
+        results = dynamodb.get_run_case_results(run1.run_id)
+        assert len(results) == 1
+        assert results[0].run_id == run1.run_id
+
+
+class TestDeleteRun:
+    def test_delete_run(self, aws_setup):
+        from src.handlers.api.models import Run
+
+        run = Run(
+            suite_id="s",
+            model_id="m",
+            baseline_prompt="bp",
+            candidate_prompt="cp",
+            rubric="r",
+        )
+        dynamodb.create_run(run)
+
+        result = dynamodb.delete_run(run.run_id)
+        assert result is True
+        assert dynamodb.get_run(run.run_id) is None
+
+    def test_delete_run_with_results(self, aws_setup):
+        from src.handlers.api.models import Run, RunCaseResult
+
+        run = Run(
+            suite_id="s",
+            model_id="m",
+            baseline_prompt="bp",
+            candidate_prompt="cp",
+            rubric="r",
+        )
+        dynamodb.create_run(run)
+
+        result1 = RunCaseResult(
+            run_id=run.run_id, case_id="c1", classification="Unchanged"
+        )
+        dynamodb.create_run_case_result(result1)
+
+        # Verify results exist
+        results = dynamodb.get_run_case_results(run.run_id)
+        assert len(results) == 1
+
+        # Delete run
+        dynamodb.delete_run(run.run_id)
+
+        # Verify run and results are gone
+        assert dynamodb.get_run(run.run_id) is None
+        assert len(dynamodb.get_run_case_results(run.run_id)) == 0
+
+    def test_delete_run_does_not_affect_other_runs(self, aws_setup):
+        from src.handlers.api.models import Run, RunCaseResult
+
+        run1 = Run(
+            suite_id="s",
+            model_id="m",
+            baseline_prompt="bp",
+            candidate_prompt="cp",
+            rubric="r",
+        )
+        run2 = Run(
+            suite_id="s",
+            model_id="m",
+            baseline_prompt="bp",
+            candidate_prompt="cp",
+            rubric="r",
+        )
+        dynamodb.create_run(run1)
+        dynamodb.create_run(run2)
+
+        r1 = RunCaseResult(run_id=run1.run_id, case_id="c1", classification="Unchanged")
+        r2 = RunCaseResult(run_id=run2.run_id, case_id="c2", classification="Improved")
+        dynamodb.create_run_case_result(r1)
+        dynamodb.create_run_case_result(r2)
+
+        # Delete run1
+        dynamodb.delete_run(run1.run_id)
+
+        # run2 should still exist
+        assert dynamodb.get_run(run2.run_id) is not None
+        results = dynamodb.get_run_case_results(run2.run_id)
+        assert len(results) == 1

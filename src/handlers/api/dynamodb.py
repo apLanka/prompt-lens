@@ -1,12 +1,62 @@
-"""DynamoDB operations for Suite and Case management."""
+"""DynamoDB operations for Suite, Case, Run, and RunCaseResult management."""
 
 import os
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import List, Optional
 import boto3
 from boto3.dynamodb.conditions import Key
 
-from .models import Suite, Case
+from .models import Suite, Case, Run, RunCaseResult
+
+
+def _sanitize_for_dynamodb(item: dict) -> dict:
+    """Convert float values to Decimal for DynamoDB compatibility."""
+    result = {}
+    for k, v in item.items():
+        if isinstance(v, float):
+            result[k] = Decimal(str(v))
+        elif isinstance(v, dict):
+            result[k] = _sanitize_for_dynamodb(v)
+        elif isinstance(v, list):
+            result[k] = [
+                _sanitize_for_dynamodb(i)
+                if isinstance(i, dict)
+                else Decimal(str(i))
+                if isinstance(i, float)
+                else i
+                for i in v
+            ]
+        else:
+            result[k] = v
+    return result
+
+
+def _deserialize_from_dynamodb(item: dict) -> dict:
+    """Convert Decimal values back to native Python types."""
+    result = {}
+    for k, v in item.items():
+        if isinstance(v, Decimal):
+            if v == int(v):
+                result[k] = int(v)
+            else:
+                result[k] = float(v)
+        elif isinstance(v, dict):
+            result[k] = _deserialize_from_dynamodb(v)
+        elif isinstance(v, list):
+            result[k] = [
+                _deserialize_from_dynamodb(i)
+                if isinstance(i, dict)
+                else int(i)
+                if isinstance(i, Decimal) and i == int(i)
+                else float(i)
+                if isinstance(i, Decimal)
+                else i
+                for i in v
+            ]
+        else:
+            result[k] = v
+    return result
 
 
 def get_table():
@@ -269,5 +319,148 @@ def delete_case(suite_id: str, case_id: str) -> bool:
             "SK": f"CASE#{case_id}",
         }
     )
+
+    return True
+
+
+def create_run(run: Run) -> Run:
+    """Create a new run in DynamoDB."""
+    table = get_table()
+
+    item = {
+        "PK": f"RUN#{run.run_id}",
+        "SK": "META",
+        **run.to_dict(),
+    }
+
+    table.put_item(Item=_sanitize_for_dynamodb(item))
+
+    return run
+
+
+def get_run(run_id: str) -> Optional[Run]:
+    """Get a run by ID."""
+    table = get_table()
+
+    response = table.get_item(
+        Key={
+            "PK": f"RUN#{run_id}",
+            "SK": "META",
+        }
+    )
+
+    item = response.get("Item")
+    if not item:
+        return None
+
+    return Run.from_dict(_deserialize_from_dynamodb(item))
+
+
+def list_runs() -> List[Run]:
+    """List all runs."""
+    table = get_table()
+
+    items: List[dict] = []
+    response = table.query(
+        IndexName="SK-index",
+        KeyConditionExpression=Key("SK").eq("META"),
+    )
+    items.extend(response.get("Items", []))
+
+    while "LastEvaluatedKey" in response:
+        response = table.query(
+            IndexName="SK-index",
+            KeyConditionExpression=Key("SK").eq("META"),
+            ExclusiveStartKey=response["LastEvaluatedKey"],
+        )
+        items.extend(response.get("Items", []))
+
+    return [
+        Run.from_dict(_deserialize_from_dynamodb(item))
+        for item in items
+        if item.get("PK", "").startswith("RUN#")
+    ]
+
+
+def update_run_status(run_id: str, status: str) -> Optional[Run]:
+    """Update run status."""
+    table = get_table()
+
+    update_expr = "SET #status = :status"
+    expr_names = {"#status": "status"}
+    expr_values = {":status": status}
+
+    if status in ["COMPLETED", "PARTIAL", "FAILED"]:
+        update_expr += ", completed_at = :completed_at"
+        expr_values[":completed_at"] = datetime.now(timezone.utc).isoformat()
+
+    response = table.update_item(
+        Key={
+            "PK": f"RUN#{run_id}",
+            "SK": "META",
+        },
+        UpdateExpression=update_expr,
+        ExpressionAttributeNames=expr_names,
+        ExpressionAttributeValues=expr_values,
+        ReturnValues="ALL_NEW",
+    )
+
+    attributes = response.get("Attributes", {})
+    return Run.from_dict(_deserialize_from_dynamodb(attributes))
+
+
+def create_run_case_result(result: RunCaseResult) -> RunCaseResult:
+    """Create a new run-case result in DynamoDB."""
+    table = get_table()
+
+    item = {
+        "PK": f"RUN#{result.run_id}",
+        "SK": f"CASE#{result.case_id}",
+        **result.to_dict(),
+    }
+
+    table.put_item(Item=_sanitize_for_dynamodb(item))
+
+    return result
+
+
+def get_run_case_results(run_id: str) -> List[RunCaseResult]:
+    """Get all case results for a run."""
+    table = get_table()
+
+    items: List[dict] = []
+    response = table.query(
+        KeyConditionExpression=Key("PK").eq(f"RUN#{run_id}")
+        & Key("SK").begins_with("CASE#"),
+    )
+    items.extend(response.get("Items", []))
+
+    while "LastEvaluatedKey" in response:
+        response = table.query(
+            KeyConditionExpression=Key("PK").eq(f"RUN#{run_id}")
+            & Key("SK").begins_with("CASE#"),
+            ExclusiveStartKey=response["LastEvaluatedKey"],
+        )
+        items.extend(response.get("Items", []))
+
+    return [RunCaseResult.from_dict(_deserialize_from_dynamodb(item)) for item in items]
+
+
+def delete_run(run_id: str) -> bool:
+    """Delete run and all its case results."""
+    table = get_table()
+
+    response = table.query(
+        KeyConditionExpression=Key("PK").eq(f"RUN#{run_id}"),
+    )
+
+    with table.batch_writer() as batch:
+        for item in response.get("Items", []):
+            batch.delete_item(
+                Key={
+                    "PK": item["PK"],
+                    "SK": item["SK"],
+                }
+            )
 
     return True
