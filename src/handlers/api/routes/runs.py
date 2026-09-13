@@ -158,13 +158,15 @@ def _compute_summary(results: list) -> dict:
     return summary
 
 
-def get_run_handler(run_id: str) -> Dict[str, Any]:
+def get_run_handler(
+    run_id: str, classification: Optional[str] = None
+) -> Dict[str, Any]:
     """Get a run with its results."""
     run = get_run(run_id)
     if not run:
         return _response(404, json.dumps({"message": "Run not found"}))
 
-    results = get_run_case_results(run_id)
+    results = get_run_case_results(run_id, classification=classification)
     response = run.to_response()
     response["results"] = [r.to_response() for r in results]
     response["summary"] = _compute_summary(results)

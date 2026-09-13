@@ -208,3 +208,82 @@ class TestListRunsFiltering:
         body = json.loads(response["body"])
         assert len(body) == 2
         assert all(r["suiteId"] == "suite-1" for r in body)
+
+
+class TestCaseResultFiltering:
+    """Test filtering in get_run_case_results."""
+
+    def test_filter_cases_by_classification(self, aws_setup):
+        """Should filter case results by classification."""
+        run = Run(
+            suite_id="suite-1",
+            model_id="anthropic.claude-3-sonnet",
+            baseline_prompt="Baseline",
+            candidate_prompt="Candidate",
+            rubric="Rubric",
+        )
+        created_run = create_run(run)
+
+        # Create results with different classifications
+        for i, classification in enumerate(["Improved", "Regressed", "Improved"]):
+            result = RunCaseResult(
+                run_id=created_run.run_id,
+                case_id=f"case-{i}",
+                baseline_output=f"Output {i}",
+                candidate_output=f"Candidate {i}",
+                baseline_score=3,
+                candidate_score=4 if classification == "Improved" else 2,
+                baseline_rationale="Rationale",
+                candidate_rationale="Rationale",
+                baseline_latency_ms=100,
+                candidate_latency_ms=120,
+                classification=classification,
+            )
+            create_run_case_result(result)
+
+        from src.handlers.api.dynamodb import get_run_case_results
+
+        results = get_run_case_results(created_run.run_id, classification="Improved")
+        assert len(results) == 2
+        assert all(r.classification == "Improved" for r in results)
+
+    def test_filter_cases_by_failed(self, aws_setup):
+        """Should return only Failed results when filtering by Failed."""
+        run = Run(
+            suite_id="suite-1",
+            model_id="anthropic.claude-3-sonnet",
+            baseline_prompt="Baseline",
+            candidate_prompt="Candidate",
+            rubric="Rubric",
+        )
+        created_run = create_run(run)
+
+        # Create mixed results
+        result_ok = RunCaseResult(
+            run_id=created_run.run_id,
+            case_id="case-0",
+            baseline_output="Output",
+            candidate_output="Candidate",
+            baseline_score=3,
+            candidate_score=4,
+            baseline_rationale="Rationale",
+            candidate_rationale="Rationale",
+            baseline_latency_ms=100,
+            candidate_latency_ms=120,
+            classification="Improved",
+        )
+        create_run_case_result(result_ok)
+
+        result_failed = RunCaseResult(
+            run_id=created_run.run_id,
+            case_id="case-1",
+            error="Timeout",
+            classification="Failed",
+        )
+        create_run_case_result(result_failed)
+
+        from src.handlers.api.dynamodb import get_run_case_results
+
+        results = get_run_case_results(created_run.run_id, classification="Failed")
+        assert len(results) == 1
+        assert results[0].classification == "Failed"

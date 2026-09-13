@@ -433,8 +433,10 @@ def create_run_case_result(result: RunCaseResult) -> RunCaseResult:
     return result
 
 
-def get_run_case_results(run_id: str) -> List[RunCaseResult]:
-    """Get all case results for a run."""
+def get_run_case_results(
+    run_id: str, classification: Optional[str] = None
+) -> List[RunCaseResult]:
+    """Get all case results for a run with optional classification filter."""
     table = get_table()
 
     items: List[dict] = []
@@ -452,7 +454,14 @@ def get_run_case_results(run_id: str) -> List[RunCaseResult]:
         )
         items.extend(response.get("Items", []))
 
-    return [RunCaseResult.from_dict(_deserialize_from_dynamodb(item)) for item in items]
+    results = [
+        RunCaseResult.from_dict(_deserialize_from_dynamodb(item)) for item in items
+    ]
+
+    if classification:
+        results = [r for r in results if r.classification == classification]
+
+    return results
 
 
 def delete_run(run_id: str) -> bool:
