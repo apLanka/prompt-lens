@@ -1,16 +1,16 @@
 """Seed data for demo suite."""
 
-import os
-import boto3
 from datetime import datetime, timezone
+
+from .dynamodb import get_table
 
 
 def seed_demo_suite():
     """Create a demo suite with sample test cases."""
-    dynamodb = boto3.resource("dynamodb")
-    table = dynamodb.Table(os.environ.get("TABLE_NAME", "PromptLens"))
+    table = get_table()
 
-    # Demo suite
+    # NOTE: Hardcoded IDs are intentional for demo/seed data, overriding the
+    # production constraint that Suite and Case IDs are generated UUID4.
     suite_id = "demo-support-replies"
     suite_name = "Customer Support Replies"
     now = datetime.now(timezone.utc).isoformat()
