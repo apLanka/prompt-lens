@@ -67,3 +67,33 @@ sam delete --stack-name promptlens
 - IAM execution role with least-privilege permissions
 - CORS configured for frontend integration
 - All data encrypted at rest and in transit
+
+## Next Steps
+
+After completing this infrastructure scaffold:
+
+1. **Task 02: Suite Management** - Implement CRUD operations for Suites and Cases
+2. Configure Bedrock model access in AWS console
+3. Set up Amplify hosting for frontend (Task 07)
+
+## Troubleshooting
+
+### Common Issues
+
+1. **SAM build fails**: Ensure Python 3.11+ is installed and in PATH
+2. **Deployment fails**: Check AWS credentials and permissions
+3. **Lambda timeout**: Increase timeout in template.yaml if needed
+4. **CORS errors**: Verify API Gateway CORS configuration
+
+### Debug Commands
+
+```bash
+# Check SAM template
+sam validate --lint
+
+# View stack events
+aws cloudformation describe-stack-events --stack-name promptlens
+
+# Check Lambda logs
+sam logs -n PromptLensApi --stack-name promptlens --tail
+```
