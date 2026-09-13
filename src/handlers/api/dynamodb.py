@@ -1,6 +1,7 @@
 """DynamoDB operations for Suite and Case management."""
 
 import os
+from datetime import datetime, timezone
 from typing import List, Optional
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -60,10 +61,20 @@ def list_suites() -> List[Suite]:
     """List all suites."""
     table = get_table()
 
+    items: List[dict] = []
     response = table.query(
         IndexName="SK-index",
         KeyConditionExpression=Key("SK").eq("META"),
     )
+    items.extend(response.get("Items", []))
+
+    while "LastEvaluatedKey" in response:
+        response = table.query(
+            IndexName="SK-index",
+            KeyConditionExpression=Key("SK").eq("META"),
+            ExclusiveStartKey=response["LastEvaluatedKey"],
+        )
+        items.extend(response.get("Items", []))
 
     return [
         Suite(
@@ -72,15 +83,13 @@ def list_suites() -> List[Suite]:
             created_at=item["created_at"],
             updated_at=item["updated_at"],
         )
-        for item in response.get("Items", [])
+        for item in items
     ]
 
 
 def update_suite(suite_id: str, name: str) -> Optional[Suite]:
     """Update suite name."""
     table = get_table()
-
-    from datetime import datetime, timezone
 
     updated_at = datetime.now(timezone.utc).isoformat()
 
@@ -141,10 +150,10 @@ def create_case(case: Case) -> Case:
         "input": case.input,
     }
 
-    if case.expected_behavior:
+    if case.expected_behavior is not None:
         item["expected_behavior"] = case.expected_behavior
 
-    if case.tags:
+    if case.tags is not None:
         item["tags"] = case.tags
 
     table.put_item(Item=item)
@@ -156,10 +165,20 @@ def get_cases(suite_id: str) -> List[Case]:
     """Get all cases for a suite."""
     table = get_table()
 
+    items: List[dict] = []
     response = table.query(
         KeyConditionExpression=Key("PK").eq(f"SUITE#{suite_id}")
         & Key("SK").begins_with("CASE#"),
     )
+    items.extend(response.get("Items", []))
+
+    while "LastEvaluatedKey" in response:
+        response = table.query(
+            KeyConditionExpression=Key("PK").eq(f"SUITE#{suite_id}")
+            & Key("SK").begins_with("CASE#"),
+            ExclusiveStartKey=response["LastEvaluatedKey"],
+        )
+        items.extend(response.get("Items", []))
 
     return [
         Case(
@@ -169,7 +188,7 @@ def get_cases(suite_id: str) -> List[Case]:
             expected_behavior=item.get("expected_behavior"),
             tags=item.get("tags", []),
         )
-        for item in response.get("Items", [])
+        for item in items
     ]
 
 
