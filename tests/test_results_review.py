@@ -2,10 +2,13 @@
 
 import json
 import pytest
-from src.handlers.api.models import Run, RunCaseResult
+from unittest.mock import patch
+from src.handlers.api.models import Run, RunCaseResult, Case
 from src.handlers.api.dynamodb import (
     create_run,
     create_run_case_result,
+    get_run_case_results,
+    update_run_status,
 )
 
 
@@ -343,6 +346,83 @@ class TestTagFiltering:
         assert results[0].case_id == "case-0"
 
 
+class TestExecuteRunTagPropagation:
+    """Test that execute_run persists case tags on Run-Case Results."""
+
+    @patch("src.handlers.api.routes.runs.classify_result", return_value="Improved")
+    @patch(
+        "src.handlers.api.routes.runs.evaluate_output",
+        return_value={"score": 4, "rationale": "Good"},
+    )
+    @patch(
+        "src.handlers.api.routes.runs.invoke_model",
+        return_value=("test output", 100.0),
+    )
+    def test_execute_run_propagates_case_tags(
+        self, mock_invoke, mock_evaluate, mock_classify, aws_setup
+    ):
+        """execute_run should write case.tags onto Run-Case Results so tag filtering works on real runs."""
+        from src.handlers.api.routes.runs import execute_run
+
+        run = Run(
+            suite_id="suite-1",
+            model_id="anthropic.claude-3-sonnet",
+            baseline_prompt="Baseline",
+            candidate_prompt="Candidate",
+            rubric="Rubric",
+        )
+        created_run = create_run(run)
+
+        tagged_case = Case(
+            suite_id="suite-1",
+            input="What is 2+2?",
+            tags=["critical", "regression"],
+        )
+        untagged_case = Case(suite_id="suite-1", input="What is 3+3?")
+
+        execute_run(created_run, [tagged_case, untagged_case])
+
+        tagged = get_run_case_results(created_run.run_id, tags=["critical"])
+        assert len(tagged) == 1
+        assert tagged[0].case_id == tagged_case.case_id
+        assert tagged[0].tags == ["critical", "regression"]
+
+        all_results = get_run_case_results(created_run.run_id)
+        assert len(all_results) == 2
+        untagged = [r for r in all_results if r.case_id == untagged_case.case_id]
+        assert len(untagged) == 1
+        assert untagged[0].tags == []
+
+    @patch(
+        "src.handlers.api.routes.runs.invoke_model", side_effect=Exception("API error")
+    )
+    def test_execute_run_propagates_tags_on_failure(self, mock_invoke, aws_setup):
+        """Failed Run-Case Results should still carry case tags."""
+        from src.handlers.api.routes.runs import execute_run
+
+        run = Run(
+            suite_id="suite-1",
+            model_id="anthropic.claude-3-sonnet",
+            baseline_prompt="Baseline",
+            candidate_prompt="Candidate",
+            rubric="Rubric",
+        )
+        created_run = create_run(run)
+
+        tagged_case = Case(
+            suite_id="suite-1",
+            input="What is 2+2?",
+            tags=["critical"],
+        )
+
+        execute_run(created_run, [tagged_case])
+
+        results = get_run_case_results(created_run.run_id, tags=["critical"])
+        assert len(results) == 1
+        assert results[0].classification == "Failed"
+        assert results[0].tags == ["critical"]
+
+
 class TestFilteredEndpoints:
     """Test filtered API endpoints."""
 
@@ -468,3 +548,53 @@ class TestFilteredEndpoints:
 
         assert len(body) == 1
         assert body[0]["status"] == "COMPLETED"
+
+    def test_partial_run_returns_all_results(self, aws_setup):
+        """PARTIAL runs must return both successful and Failed results — no status gating on result retrieval."""
+        run = Run(
+            suite_id="suite-1",
+            model_id="anthropic.claude-3-sonnet",
+            baseline_prompt="Baseline",
+            candidate_prompt="Candidate",
+            rubric="Rubric",
+        )
+        created_run = create_run(run)
+
+        result_ok = RunCaseResult(
+            run_id=created_run.run_id,
+            case_id="case-0",
+            baseline_output="Output",
+            candidate_output="Candidate",
+            baseline_score=3,
+            candidate_score=4,
+            baseline_rationale="Rationale",
+            candidate_rationale="Rationale",
+            baseline_latency_ms=100,
+            candidate_latency_ms=120,
+            classification="Improved",
+        )
+        create_run_case_result(result_ok)
+
+        result_failed = RunCaseResult(
+            run_id=created_run.run_id,
+            case_id="case-1",
+            error="Timeout",
+            classification="Failed",
+        )
+        create_run_case_result(result_failed)
+
+        update_run_status(created_run.run_id, "PARTIAL")
+
+        from src.handlers.api.routes.runs import get_run_handler
+
+        response = get_run_handler(created_run.run_id)
+        body = json.loads(response["body"])
+
+        assert response["statusCode"] == 200
+        assert body["status"] == "PARTIAL"
+        assert len(body["results"]) == 2
+        classifications = {r["classification"] for r in body["results"]}
+        assert classifications == {"Improved", "Failed"}
+        assert body["summary"]["total"] == 2
+        assert body["summary"]["improved"] == 1
+        assert body["summary"]["failed"] == 1

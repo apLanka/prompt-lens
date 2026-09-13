@@ -55,7 +55,8 @@ def handle_run_by_id(event: Dict[str, Any]) -> Dict[str, Any]:
     run_id = event.get("pathParameters", {}).get("runId")
     params = event.get("queryStringParameters") or {}
     classification = params.get("classification")
-    tags = params.get("tags", "").split(",") if params.get("tags") else None
+    raw_tags = params.get("tags")
+    tags = [t.strip() for t in raw_tags.split(",") if t.strip()] if raw_tags else None
 
     if not run_id:
         return _response(400, json.dumps({"message": "runId is required"}))
@@ -247,6 +248,7 @@ def execute_run(run: Run, cases: list) -> None:
                 baseline_latency_ms=baseline_latency,
                 candidate_latency_ms=candidate_latency,
                 classification=classification,
+                tags=case.tags,
             )
 
             create_run_case_result(result)
@@ -258,6 +260,7 @@ def execute_run(run: Run, cases: list) -> None:
                 case_id=case.case_id,
                 error=str(e),
                 classification="Failed",
+                tags=case.tags,
             )
             create_run_case_result(result)
 
