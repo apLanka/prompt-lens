@@ -54,23 +54,26 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     # /suites/{suiteId}/cases/{caseId}
     case_match = re.match(r"^/suites/([^/]+)/cases/([^/]+)$", path)
     if case_match:
-        event["pathParameters"] = {
-            "suiteId": case_match.group(1),
-            "caseId": case_match.group(2),
+        event_copy = {
+            **event,
+            "pathParameters": {
+                "suiteId": case_match.group(1),
+                "caseId": case_match.group(2),
+            },
         }
-        return handle_case_by_id(event)
+        return handle_case_by_id(event_copy)
 
     # /suites/{suiteId}/cases
     cases_match = re.match(r"^/suites/([^/]+)/cases$", path)
     if cases_match:
-        event["pathParameters"] = {"suiteId": cases_match.group(1)}
-        return handle_cases(event)
+        event_copy = {**event, "pathParameters": {"suiteId": cases_match.group(1)}}
+        return handle_cases(event_copy)
 
     # /suites/{suiteId}
     suite_match = re.match(r"^/suites/([^/]+)$", path)
     if suite_match:
-        event["pathParameters"] = {"suiteId": suite_match.group(1)}
-        return handle_suite_by_id(event)
+        event_copy = {**event, "pathParameters": {"suiteId": suite_match.group(1)}}
+        return handle_suite_by_id(event_copy)
 
     # /suites
     if path == "/suites":

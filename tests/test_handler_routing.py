@@ -55,8 +55,9 @@ class TestHandlerRouting:
         with patch("src.handlers.api.handle_suite_by_id") as mock:
             mock.return_value = {"statusCode": 200, "body": "{}"}
             result = handler(event, None)
-            mock.assert_called_once_with(event)
-            assert event["pathParameters"] == {"suiteId": "abc123"}
+            expected = {**event, "pathParameters": {"suiteId": "abc123"}}
+            mock.assert_called_once_with(expected)
+            assert "pathParameters" not in event
 
     def test_cases_route(self):
         """Route /suites/{id}/cases calls handle_cases with pathParameters."""
@@ -65,8 +66,9 @@ class TestHandlerRouting:
         with patch("src.handlers.api.handle_cases") as mock:
             mock.return_value = {"statusCode": 200, "body": "{}"}
             result = handler(event, None)
-            mock.assert_called_once_with(event)
-            assert event["pathParameters"] == {"suiteId": "abc123"}
+            expected = {**event, "pathParameters": {"suiteId": "abc123"}}
+            mock.assert_called_once_with(expected)
+            assert "pathParameters" not in event
 
     def test_case_by_id_route(self):
         """Route /suites/{id}/cases/{caseId} calls handle_case_by_id."""
@@ -75,8 +77,12 @@ class TestHandlerRouting:
         with patch("src.handlers.api.handle_case_by_id") as mock:
             mock.return_value = {"statusCode": 200, "body": "{}"}
             result = handler(event, None)
-            mock.assert_called_once_with(event)
-            assert event["pathParameters"] == {"suiteId": "abc123", "caseId": "def456"}
+            expected = {
+                **event,
+                "pathParameters": {"suiteId": "abc123", "caseId": "def456"},
+            }
+            mock.assert_called_once_with(expected)
+            assert "pathParameters" not in event
 
     def test_unknown_route_returns_404(self):
         """Unknown routes return 404."""
