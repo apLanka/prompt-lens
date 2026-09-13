@@ -3,7 +3,6 @@
 import json
 import os
 import pytest
-from unittest.mock import Mock, patch, MagicMock
 from moto import mock_aws
 import boto3
 from src.handlers.api.models import Run, RunCaseResult
