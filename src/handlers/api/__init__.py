@@ -7,6 +7,7 @@ from typing import Any, Dict
 
 from .routes.suites import handle_suites, handle_suite_by_id
 from .routes.cases import handle_cases, handle_case_by_id
+from .routes.runs import handle_runs, handle_run_by_id
 
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -78,6 +79,16 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     # /suites
     if path == "/suites":
         return handle_suites(event)
+
+    # /runs/{runId}
+    run_match = re.match(r"^/runs/([^/]+)$", path)
+    if run_match:
+        event_copy = {**event, "pathParameters": {"runId": run_match.group(1)}}
+        return handle_run_by_id(event_copy)
+
+    # /runs
+    if path == "/runs":
+        return handle_runs(event)
 
     # Default response for unimplemented routes
     return {

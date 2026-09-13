@@ -93,6 +93,25 @@ class TestHandlerRouting:
         body = json.loads(result["body"])
         assert body["message"] == "Not found"
 
+    def test_runs_route(self):
+        """Route /runs calls handle_runs."""
+        event = {"path": "/runs", "httpMethod": "GET"}
+
+        with patch("src.handlers.api.handle_runs") as mock:
+            mock.return_value = {"statusCode": 200, "body": "{}"}
+            result = handler(event, None)
+            mock.assert_called_once_with(event)
+
+    def test_run_by_id_route(self):
+        """Route /runs/{id} calls handle_run_by_id with pathParameters."""
+        event = {"path": "/runs/abc123", "httpMethod": "GET"}
+
+        with patch("src.handlers.api.handle_run_by_id") as mock:
+            mock.return_value = {"statusCode": 200, "body": "{}"}
+            result = handler(event, None)
+            expected = {**event, "pathParameters": {"runId": "abc123"}}
+            mock.assert_called_once_with(expected)
+
     def test_route_order_case_before_suite(self):
         """Cases route matches before suite route for /suites/{id}/cases."""
         event = {"path": "/suites/abc/cases", "httpMethod": "GET"}
