@@ -52,6 +52,21 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         }
 
     # Route matching
+    # /runs/{runId}
+    run_match = re.match(r"^/runs/([^/]+)$", path)
+    if run_match:
+        event_copy = {
+            **event,
+            "pathParameters": {
+                "runId": run_match.group(1),
+            },
+        }
+        return handle_run_by_id(event_copy)
+
+    # /runs
+    if path == "/runs":
+        return handle_runs(event)
+
     # /suites/{suiteId}/cases/{caseId}
     case_match = re.match(r"^/suites/([^/]+)/cases/([^/]+)$", path)
     if case_match:
@@ -79,16 +94,6 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     # /suites
     if path == "/suites":
         return handle_suites(event)
-
-    # /runs/{runId}
-    run_match = re.match(r"^/runs/([^/]+)$", path)
-    if run_match:
-        event_copy = {**event, "pathParameters": {"runId": run_match.group(1)}}
-        return handle_run_by_id(event_copy)
-
-    # /runs
-    if path == "/runs":
-        return handle_runs(event)
 
     # Default response for unimplemented routes
     return {
