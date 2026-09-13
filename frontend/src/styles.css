@@ -50,3 +50,16 @@ textarea { width: 100%; min-height: 8rem; font-family: ui-monospace, monospace; 
   background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;
   padding: 0.75rem 1rem; border-radius: 8px; margin-bottom: 1rem;
 }
+.editor-header { display: flex; gap: 1rem; justify-content: space-between; margin-bottom: 1rem; }
+.suite-name-input { font-size: 1.25rem; font-weight: 600; flex: 1; }
+.case-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 1rem; }
+.case-item { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
+.case-editor label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.5rem; }
+.case-editor textarea { min-height: 4rem; }
+.case-actions { display: flex; gap: 0.5rem; }
+.case-tags { display: flex; gap: 0.25rem; margin-top: 0.5rem; flex-wrap: wrap; }
+.tag {
+  font-size: 0.75rem; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 999px; padding: 0.15rem 0.6rem; color: var(--muted);
+}
+button.danger { color: var(--failed); border-color: var(--failed); }
