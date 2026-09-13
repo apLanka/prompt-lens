@@ -434,9 +434,11 @@ def create_run_case_result(result: RunCaseResult) -> RunCaseResult:
 
 
 def get_run_case_results(
-    run_id: str, classification: Optional[str] = None
+    run_id: str,
+    classification: Optional[str] = None,
+    tags: Optional[List[str]] = None,
 ) -> List[RunCaseResult]:
-    """Get all case results for a run with optional classification filter."""
+    """Get all case results for a run with optional filters."""
     table = get_table()
 
     items: List[dict] = []
@@ -460,6 +462,9 @@ def get_run_case_results(
 
     if classification:
         results = [r for r in results if r.classification == classification]
+
+    if tags:
+        results = [r for r in results if r.tags and any(t in r.tags for t in tags)]
 
     return results
 

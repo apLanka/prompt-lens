@@ -1,7 +1,7 @@
 """Run-Case Result data model."""
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import List, Optional
 
 
 @dataclass
@@ -22,6 +22,7 @@ class RunCaseResult:
         "Needs review"  # Improved, Regressed, Unchanged, Needs review, Failed
     )
     error: Optional[str] = None
+    tags: Optional[List[str]] = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary for DynamoDB storage."""
@@ -48,6 +49,8 @@ class RunCaseResult:
             result["candidate_latency_ms"] = self.candidate_latency_ms
         if self.error is not None:
             result["error"] = self.error
+        if self.tags is not None:
+            result["tags"] = self.tags
         return result
 
     def to_response(self) -> dict:
@@ -75,6 +78,8 @@ class RunCaseResult:
             result["candidateLatencyMs"] = self.candidate_latency_ms
         if self.error is not None:
             result["error"] = self.error
+        if self.tags is not None:
+            result["tags"] = self.tags
         return result
 
     @classmethod
@@ -93,4 +98,5 @@ class RunCaseResult:
             candidate_latency_ms=data.get("candidate_latency_ms"),
             classification=data.get("classification", "Needs review"),
             error=data.get("error"),
+            tags=data.get("tags"),
         )

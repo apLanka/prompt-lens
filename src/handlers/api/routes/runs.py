@@ -1,7 +1,7 @@
 """Run route handlers."""
 
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from ..models import Run, RunCaseResult
 from ..dynamodb import (
@@ -53,13 +53,15 @@ def handle_run_by_id(event: Dict[str, Any]) -> Dict[str, Any]:
     """Handle /runs/{runId} routes."""
     method = event.get("httpMethod")
     run_id = event.get("pathParameters", {}).get("runId")
-    classification = (event.get("queryStringParameters") or {}).get("classification")
+    params = event.get("queryStringParameters") or {}
+    classification = params.get("classification")
+    tags = params.get("tags", "").split(",") if params.get("tags") else None
 
     if not run_id:
         return _response(400, json.dumps({"message": "runId is required"}))
 
     if method == "GET":
-        return get_run_handler(run_id, classification=classification)
+        return get_run_handler(run_id, classification=classification, tags=tags)
     elif method == "DELETE":
         return delete_run_handler(run_id)
     else:
@@ -160,14 +162,16 @@ def _compute_summary(results: list) -> dict:
 
 
 def get_run_handler(
-    run_id: str, classification: Optional[str] = None
+    run_id: str,
+    classification: Optional[str] = None,
+    tags: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Get a run with its results."""
     run = get_run(run_id)
     if not run:
         return _response(404, json.dumps({"message": "Run not found"}))
 
-    results = get_run_case_results(run_id, classification=classification)
+    results = get_run_case_results(run_id, classification=classification, tags=tags)
     response = run.to_response()
     response["results"] = [r.to_response() for r in results]
     response["summary"] = _compute_summary(results)

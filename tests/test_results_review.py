@@ -289,6 +289,60 @@ class TestCaseResultFiltering:
         assert results[0].classification == "Failed"
 
 
+class TestTagFiltering:
+    """Test filtering by tags."""
+
+    def test_filter_cases_by_tag(self, aws_setup):
+        """Should filter case results by tag."""
+        run = Run(
+            suite_id="suite-1",
+            model_id="anthropic.claude-3-sonnet",
+            baseline_prompt="Baseline",
+            candidate_prompt="Candidate",
+            rubric="Rubric",
+        )
+        created_run = create_run(run)
+
+        # Create results with different tags
+        result1 = RunCaseResult(
+            run_id=created_run.run_id,
+            case_id="case-0",
+            baseline_output="Output 0",
+            candidate_output="Candidate 0",
+            baseline_score=3,
+            candidate_score=4,
+            baseline_rationale="Rationale",
+            candidate_rationale="Rationale",
+            baseline_latency_ms=100,
+            candidate_latency_ms=120,
+            classification="Improved",
+            tags=["critical", "regression"],
+        )
+        create_run_case_result(result1)
+
+        result2 = RunCaseResult(
+            run_id=created_run.run_id,
+            case_id="case-1",
+            baseline_output="Output 1",
+            candidate_output="Candidate 1",
+            baseline_score=3,
+            candidate_score=3,
+            baseline_rationale="Rationale",
+            candidate_rationale="Rationale",
+            baseline_latency_ms=100,
+            candidate_latency_ms=120,
+            classification="Unchanged",
+            tags=["performance"],
+        )
+        create_run_case_result(result2)
+
+        from src.handlers.api.dynamodb import get_run_case_results
+
+        results = get_run_case_results(created_run.run_id, tags=["critical"])
+        assert len(results) == 1
+        assert results[0].case_id == "case-0"
+
+
 class TestFilteredEndpoints:
     """Test filtered API endpoints."""
 
@@ -335,6 +389,58 @@ class TestFilteredEndpoints:
         # Summary should reflect filtered results
         assert body["summary"]["improved"] == 1
         assert body["summary"]["regressed"] == 0
+
+    def test_get_run_with_tags_filter(self, aws_setup):
+        """GET /runs/{runId}?tags=critical,regression returns results matching any tag."""
+        run = Run(
+            suite_id="suite-1",
+            model_id="anthropic.claude-3-sonnet",
+            baseline_prompt="Baseline",
+            candidate_prompt="Candidate",
+            rubric="Rubric",
+        )
+        created_run = create_run(run)
+
+        # Create results with different tags
+        tagged = [
+            (["critical", "regression"], "Improved"),
+            (["performance"], "Regressed"),
+            (None, "Unchanged"),
+        ]
+        for i, (tags, classification) in enumerate(tagged):
+            result = RunCaseResult(
+                run_id=created_run.run_id,
+                case_id=f"case-{i}",
+                baseline_output=f"Output {i}",
+                candidate_output=f"Candidate {i}",
+                baseline_score=3,
+                candidate_score=4 if classification == "Improved" else 3,
+                baseline_rationale="Rationale",
+                candidate_rationale="Rationale",
+                baseline_latency_ms=100,
+                candidate_latency_ms=120,
+                classification=classification,
+                tags=tags,
+            )
+            create_run_case_result(result)
+
+        from src.handlers.api.routes.runs import handle_run_by_id
+
+        event = {
+            "httpMethod": "GET",
+            "pathParameters": {"runId": created_run.run_id},
+            "queryStringParameters": {"tags": "critical,regression"},
+        }
+        response = handle_run_by_id(event)
+        body = json.loads(response["body"])
+
+        assert response["statusCode"] == 200
+        assert len(body["results"]) == 1
+        assert body["results"][0]["caseId"] == "case-0"
+        assert body["results"][0]["tags"] == ["critical", "regression"]
+        # Summary is computed on filtered results
+        assert body["summary"]["total"] == 1
+        assert body["summary"]["improved"] == 1
 
     def test_list_runs_with_status_filter(self, aws_setup):
         """GET /runs?status=COMPLETED should return only completed runs."""
