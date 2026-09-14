@@ -70,6 +70,7 @@ export default function RunConfigScreen() {
         rubric,
         temperature,
         maxTokens,
+        caseIds: Array.from(selectedCases),
       });
       navigate(`/runs/${run.runId}`);
     } catch (e) {

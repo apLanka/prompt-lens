@@ -111,9 +111,24 @@ def create_run_handler(event: Dict[str, Any]) -> Dict[str, Any]:
     if not suite:
         return _response(404, json.dumps({"message": "Suite not found"}))
 
-    cases = get_cases(suite_id)[:MAX_CASES_PER_RUN]
-    if not cases:
+    case_ids = body.get("caseIds")
+    if case_ids is not None and not isinstance(case_ids, list):
+        return _response(400, json.dumps({"message": "caseIds must be a list"}))
+
+    all_cases = get_cases(suite_id)
+    if case_ids:
+        cases = [c for c in all_cases if c.case_id in case_ids][:MAX_CASES_PER_RUN]
+        if not cases:
+            return _response(
+                400,
+                json.dumps(
+                    {"message": "None of the selected cases were found in this suite"}
+                ),
+            )
+    elif not all_cases:
         return _response(400, json.dumps({"message": "Suite has no cases"}))
+    else:
+        cases = all_cases[:MAX_CASES_PER_RUN]
 
     run = Run(
         suite_id=suite_id,

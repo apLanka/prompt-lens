@@ -126,6 +126,149 @@ class TestHandleRuns:
         assert body["temperature"] == 0.5
         assert body["maxTokens"] == 512
 
+    @patch("src.handlers.api.routes.runs.create_run_case_result")
+    @patch("src.handlers.api.routes.runs.update_run_status")
+    @patch("src.handlers.api.routes.runs.classify_result", return_value="Improved")
+    @patch("src.handlers.api.routes.runs.evaluate_output")
+    @patch("src.handlers.api.routes.runs.invoke_model")
+    def test_post_create_run_with_case_ids(
+        self,
+        mock_invoke,
+        mock_evaluate,
+        mock_classify,
+        mock_update_status,
+        mock_create_result,
+        aws_setup,
+    ):
+        mock_invoke.return_value = ("test output", 100.0)
+        mock_evaluate.return_value = {"score": 4, "rationale": "Good"}
+
+        suite = dynamodb.create_suite(Suite(name="Test Suite"))
+        case1 = Case(suite_id=suite.suite_id, input="Question 1")
+        case2 = Case(suite_id=suite.suite_id, input="Question 2")
+        case3 = Case(suite_id=suite.suite_id, input="Question 3")
+        case4 = Case(suite_id=suite.suite_id, input="Question 4")
+        for c in [case1, case2, case3, case4]:
+            dynamodb.create_case(c)
+
+        event = make_event(
+            "POST",
+            body={
+                "suiteId": suite.suite_id,
+                "modelId": "anthropic.claude-3-haiku-20240307-v1:0",
+                "baselinePrompt": "Answer clearly",
+                "candidatePrompt": "Answer concisely",
+                "rubric": "Score based on accuracy",
+                "caseIds": [case4.case_id, case2.case_id],
+            },
+        )
+        response = handle_runs(event)
+
+        assert response["statusCode"] == 201
+        baseline_prompts = [
+            call.kwargs["prompt"]
+            for call in mock_invoke.call_args_list
+            if call.kwargs["prompt"].startswith("Answer clearly\n\n")
+        ]
+        assert sorted(baseline_prompts) == sorted(
+            ["Answer clearly\n\nQuestion 2", "Answer clearly\n\nQuestion 4"]
+        )
+        result_case_ids = sorted(
+            call.args[0].case_id for call in mock_create_result.call_args_list
+        )
+        assert result_case_ids == sorted([case2.case_id, case4.case_id])
+
+    def test_post_create_run_case_ids_no_match(self, aws_setup):
+        suite = dynamodb.create_suite(Suite(name="Test Suite"))
+        dynamodb.create_case(Case(suite_id=suite.suite_id, input="What is 2+2?"))
+
+        event = make_event(
+            "POST",
+            body={
+                "suiteId": suite.suite_id,
+                "modelId": "anthropic.claude-3-haiku-20240307-v1:0",
+                "baselinePrompt": "Answer clearly",
+                "candidatePrompt": "Answer concisely",
+                "rubric": "Score based on accuracy",
+                "caseIds": ["nonexistent-id"],
+            },
+        )
+        response = handle_runs(event)
+
+        assert response["statusCode"] == 400
+        body = json.loads(response["body"])
+        assert body["message"] == "None of the selected cases were found in this suite"
+
+    def test_post_create_run_case_ids_not_a_list(self, aws_setup):
+        suite = dynamodb.create_suite(Suite(name="Test Suite"))
+        dynamodb.create_case(Case(suite_id=suite.suite_id, input="What is 2+2?"))
+
+        event = make_event(
+            "POST",
+            body={
+                "suiteId": suite.suite_id,
+                "modelId": "anthropic.claude-3-haiku-20240307-v1:0",
+                "baselinePrompt": "Answer clearly",
+                "candidatePrompt": "Answer concisely",
+                "rubric": "Score based on accuracy",
+                "caseIds": "not-a-list",
+            },
+        )
+        response = handle_runs(event)
+
+        assert response["statusCode"] == 400
+        body = json.loads(response["body"])
+        assert body["message"] == "caseIds must be a list"
+
+    @patch("src.handlers.api.routes.runs.create_run_case_result")
+    @patch("src.handlers.api.routes.runs.update_run_status")
+    @patch("src.handlers.api.routes.runs.classify_result", return_value="Improved")
+    @patch("src.handlers.api.routes.runs.evaluate_output")
+    @patch("src.handlers.api.routes.runs.invoke_model")
+    def test_post_create_run_without_case_ids_uses_first_three(
+        self,
+        mock_invoke,
+        mock_evaluate,
+        mock_classify,
+        mock_update_status,
+        mock_create_result,
+        aws_setup,
+    ):
+        mock_invoke.return_value = ("test output", 100.0)
+        mock_evaluate.return_value = {"score": 4, "rationale": "Good"}
+
+        suite = dynamodb.create_suite(Suite(name="Test Suite"))
+        cases = [
+            Case(suite_id=suite.suite_id, input=f"Question {i}") for i in range(1, 5)
+        ]
+        for c in cases:
+            dynamodb.create_case(c)
+
+        event = make_event(
+            "POST",
+            body={
+                "suiteId": suite.suite_id,
+                "modelId": "anthropic.claude-3-haiku-20240307-v1:0",
+                "baselinePrompt": "Answer clearly",
+                "candidatePrompt": "Answer concisely",
+                "rubric": "Score based on accuracy",
+            },
+        )
+        response = handle_runs(event)
+
+        assert response["statusCode"] == 201
+        expected_inputs = [
+            c.input for c in dynamodb.get_cases(suite.suite_id)[:MAX_CASES_PER_RUN]
+        ]
+        baseline_prompts = [
+            call.kwargs["prompt"]
+            for call in mock_invoke.call_args_list
+            if call.kwargs["prompt"].startswith("Answer clearly\n\n")
+        ]
+        assert baseline_prompts == [
+            f"Answer clearly\n\n{inp}" for inp in expected_inputs
+        ]
+
     def test_method_not_allowed(self, aws_setup):
         event = make_event("DELETE")
         response = handle_runs(event)

@@ -39,7 +39,7 @@
 - `DELETE /suites/{suiteId}/cases/{caseId}` → 204
 - `GET /runs` → `Run[]` where `Run = { runId, suiteId, modelId, baselinePrompt, candidatePrompt, rubric, status, temperature, maxTokens, createdAt, completedAt? }`
 - `GET /runs?status=X&suiteId=Y` → filtered `Run[]`
-- `POST /runs` body `{ suiteId, modelId, baselinePrompt, candidatePrompt, rubric, temperature?, maxTokens? }` → 201 Run (synchronous execution; response is the completed run with status COMPLETED/PARTIAL/FAILED) — may take up to 60s
+- `POST /runs` body `{ suiteId, modelId, baselinePrompt, candidatePrompt, rubric, temperature?, maxTokens?, caseIds? }` → 201 Run (synchronous execution; response is the completed run with status COMPLETED/PARTIAL/FAILED) — may take up to 60s. `caseIds` (optional): list of case IDs to run; filtered to the suite's cases in suite order, capped at 3. If omitted/empty, the suite's first 3 cases run. 400 if caseIds is not a list or if none of the given caseIds match the suite's cases.
 - `GET /runs/{runId}` → Run + `results: RunCaseResult[]` + `summary: { total, improved, regressed, unchanged, needsReview, failed }`
 - `GET /runs/{runId}?classification=X&tags=a,b` → Run + filtered results + filtered-subset summary
 - `RunCaseResult = { runId, caseId, classification, baselineOutput?, candidateOutput?, baselineScore?, candidateScore?, baselineRationale?, candidateRationale?, baselineLatencyMs?, candidateLatencyMs?, error?, tags }`
@@ -925,6 +925,7 @@ export default function RunConfigScreen() {
         rubric,
         temperature,
         maxTokens,
+        caseIds: Array.from(selectedCases),
       });
       navigate(`/runs/${run.runId}`);
     } catch (e) {

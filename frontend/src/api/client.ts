@@ -80,5 +80,5 @@ export const getRun = (runId: string, filters?: { classification?: string; tags?
 
 export const createRun = (body: {
   suiteId: string; modelId: string; baselinePrompt: string; candidatePrompt: string;
-  rubric: string; temperature?: number; maxTokens?: number;
+  rubric: string; temperature?: number; maxTokens?: number; caseIds?: string[];
 }) => apiFetch<Run>("/runs", jsonInit("POST", body));
