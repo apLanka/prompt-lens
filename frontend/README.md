@@ -20,6 +20,14 @@ The dev server reads `VITE_API_BASE_URL` at build time (see `.env.example`).
 - `/suites/:suiteId/run` — Run Config: prompts, model, settings, case selection (max 3)
 - `/runs/:runId` — Results: summary cards, filters, side-by-side comparison
 
+## Demo data
+
+To seed the demo suite ("Customer Support Replies" with 3 cases), run against the configured table:
+
+```bash
+python src/handlers/api/seed.py
+```
+
 ## Testing
 
 ```bash

@@ -100,4 +100,4 @@ sam logs -n PromptLensApi --stack-name promptlens --tail
 
 ## Frontend
 
-The React frontend lives in `frontend/`. See `frontend/README.md` for setup. The API base URL is configured via `VITE_API_BASE_URL` (see `.env.example`).
+The React frontend lives in `frontend/`. See `frontend/README.md` for setup. The API base URL is configured via `VITE_API_BASE_URL` (see `.env.example`). To seed the demo suite, run `python src/handlers/api/seed.py`.

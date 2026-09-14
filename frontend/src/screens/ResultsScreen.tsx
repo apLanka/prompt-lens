@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { getRun, ApiError } from "../api/client";
 import type { RunCaseResult, RunWithResults } from "../api/types";
@@ -14,6 +14,7 @@ export default function ResultsScreen() {
   const [run, setRun] = useState<RunWithResults | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const seqRef = useRef(0);
 
   const classification = searchParams.get("classification") ?? undefined;
   const tagsParam = searchParams.get("tags");
@@ -21,19 +22,30 @@ export default function ResultsScreen() {
 
   const load = useCallback(async () => {
     if (!runId) return;
+    const seq = ++seqRef.current;
     setLoading(true);
     setError("");
     try {
-      const r = await getRun(runId, { classification, tags: tags?.length ? tags : undefined });
-      setRun({ ...r, results: r.results.map((res: RunCaseResult) => ({ ...res, tags: res.tags ?? [] })) });
+      const data = await getRun(runId, { classification, tags: tags?.length ? tags : undefined });
+      if (seq === seqRef.current) {
+        setRun({ ...data, results: data.results.map((res: RunCaseResult) => ({ ...res, tags: res.tags ?? [] })) });
+        setError("");
+      }
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Could not load the results.");
+      if (seq === seqRef.current) {
+        setError(e instanceof ApiError ? e.message : "Could not load the results.");
+      }
     } finally {
-      setLoading(false);
+      if (seq === seqRef.current) {
+        setLoading(false);
+      }
     }
   }, [runId, classification, tags?.join(",")]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const t = setTimeout(() => { load(); }, 300);
+    return () => clearTimeout(t);
+  }, [load]);
 
   const setFilter = (next: { classification?: string; tags?: string[] }) => {
     const params = new URLSearchParams();
@@ -42,7 +54,7 @@ export default function ResultsScreen() {
     setSearchParams(params);
   };
 
-  if (loading) return <div className="screen"><p>Loading results…</p></div>;
+  if (loading && !run) return <div className="screen"><p>Loading results…</p></div>;
 
   return (
     <div className="screen">

@@ -74,7 +74,7 @@ export const getRun = (runId: string, filters?: { classification?: string; tags?
   const params = new URLSearchParams();
   if (filters?.classification) params.set("classification", filters.classification);
   if (filters?.tags?.length) params.set("tags", filters.tags.join(","));
-  const qs = params.toString();
+  const qs = params.toString().replaceAll("+", "%20");
   return apiFetch<RunWithResults>(`/runs/${runId}${qs ? `?${qs}` : ""}`);
 };
 

@@ -69,7 +69,7 @@ export default function RunConfigScreen() {
         candidatePrompt,
         rubric,
         temperature,
-        maxTokens,
+        maxTokens: Math.min(4096, Math.max(256, maxTokens || 1024)),
         caseIds: Array.from(selectedCases),
       });
       navigate(`/runs/${run.runId}`);

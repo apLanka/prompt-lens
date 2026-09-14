@@ -38,6 +38,13 @@ describe("api client", () => {
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body).suiteId).toBe("s1");
   });
+
+  it("encodes spaces in classification filter as %20", async () => {
+    mockFetch.mockResolvedValue(okJson({ runId: "r1", results: [], summary: { total: 0 } }));
+    await getRun("r1", { classification: "Needs review" });
+    const [url] = mockFetch.mock.calls[0];
+    expect(String(url)).toContain("classification=Needs%20review");
+  });
 });
 
 function okJson(data: unknown) {
