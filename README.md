@@ -2,90 +2,233 @@
 
 A lightweight prompt-regression testing workspace for AI engineers. Compares two prompt versions against saved test cases, invokes Amazon Bedrock models, scores results against rubrics, and highlights regressions.
 
-## Repository layout
+---
+
+## Architecture
 
 ```
-prompt-lens/
-├── backend/    # Python 3.11 Lambda + SAM (API, DynamoDB, Bedrock)
-├── frontend/   # React + TypeScript + Vite
-├── docs/       # ADRs, architecture diagram, implementation plans
-└── sam         # SAM CLI wrapper (runs in backend/)
+                           ┌─────────────────────────────────┐
+                           │          AWS Cloud               │
+                           │                                  │
+ ┌───────────────┐        │  ┌──────────────────────────┐   │
+ │               │        │  │    API Gateway (REST)     │   │
+ │   Amplify     │ HTTPS  │  │    Stage: Prod            │   │
+ │   ┌────────┐  │◀──────▶│  │    CORS: Amplify domain   │   │
+ │   │ React  │  │        │  └────────────┬─────────────┘   │
+ │   │ + Vite │  │        │               │                  │
+ │   └────────┘  │        │        ┌──────▼──────┐          │
+ │               │        │        │   Lambda     │          │
+ └───────────────┘        │        │  Python 3.11 │          │
+                          │        │  256MB / 30s  │          │
+                          │        └──────┬──────┘          │
+                          │               │                  │
+                          │    ┌──────────┼──────────┐      │
+                          │    │          │          │      │
+                          │ ┌──▼───┐ ┌───▼───┐ ┌───▼────┐ │
+                          │ │Dynamo│ │Bedrock│ │Cloud-  │ │
+                          │ │DB    │ │       │ │Watch   │ │
+                          │ │single│ │invoke │ │logs    │ │
+                          │ │table │ │eval   │ │        │ │
+                          │ └──────┘ └───────┘ └────────┘ │
+                          └─────────────────────────────────┘
 ```
 
-See `backend/README.md` and `frontend/README.md` for package-specific setup.
+**Full reference:** [`docs/architecture.md`](docs/architecture.md)
+
+---
+
+## Data Flow
+
+### Run Execution (per case)
+
+```
+  User clicks "Run comparison"
+          │
+          ▼
+  ┌──────────────────┐
+  │ POST /runs       │  Validate input, create RUN# in DynamoDB
+  │ (201 + runId)    │
+  └────────┬─────────┘
+           │
+           ▼
+  ┌──────────────────┐
+  │ invoke_model()   │  Baseline prompt + case input → Bedrock
+  │ (baseline)       │  → baseline_output, latency_ms
+  └────────┬─────────┘
+           │
+           ▼
+  ┌──────────────────┐
+  │ invoke_model()   │  Candidate prompt + case input → Bedrock
+  │ (candidate)      │  → candidate_output, latency_ms
+  └────────┬─────────┘
+           │
+           ▼
+  ┌──────────────────┐
+  │ evaluate_output()│  Baseline output + rubric → Bedrock evaluator
+  │ (baseline eval)  │  → score (1-5), confidence, rationale
+  └────────┬─────────┘
+           │
+           ▼
+  ┌──────────────────┐
+  │ evaluate_output()│  Candidate output + rubric → Bedrock evaluator
+  │ (candidate eval) │  → score (1-5), confidence, rationale
+  └────────┬─────────┘
+           │
+           ▼
+  ┌──────────────────┐
+  │ classify_result()│  Compare scores → Improved / Regressed / Unchanged
+  └────────┬─────────┘
+           │
+           ▼
+  ┌──────────────────┐
+  │ Write RESULT#    │  Store RunCaseResult in DynamoDB
+  │ to DynamoDB      │  (includes truncated flag if output hit max tokens)
+  └──────────────────┘
+
+  × 4 Bedrock calls per case  ×  max 3 cases per run  =  12 invocations max
+```
+
+### DynamoDB Key Pattern
+
+```
+  Table: PromptLens
+  ─────────────────────────────────────────────────────────────
+  PK                      │ SK                    │ Contains
+  ────────────────────────┼───────────────────────┼──────────────
+  SUITE#<id>              │ METADATA              │ Suite name, timestamps
+  SUITE#<id>              │ CASE#<id>             │ Input, expected behavior, tags
+  RUN#<id>                │ METADATA              │ Model, prompts, rubric, status
+  RUN#<id>                │ RESULT#<caseId>       │ Outputs, scores, classification
+  ─────────────────────────────────────────────────────────────
+
+  GSI: SK-index  (SK = HASH, PK = RANGE)
+  ─────────────────────────────────────────────────────────────
+  Enables:  query all RESULT# items across runs
+            filter by classification
+  ─────────────────────────────────────────────────────────────
+```
+
+### Frontend Screens
+
+```
+  ┌────────────┐      ┌────────────────┐      ┌────────────────┐      ┌────────────────┐
+  │            │      │                │      │                │      │                │
+  │   Home     │─────▶│  Suite Editor  │─────▶│  Run Config    │─────▶│    Results     │
+  │            │      │                │      │                │      │                │
+  │ List suites│      │ Edit suite name│      │ Pick model     │      │ Summary cards  │
+  │ Create new │      │ Add/edit/delete│      │ Write prompts  │      │ Filters        │
+  │            │      │ cases          │      │ Select cases   │      │ Side-by-side   │
+  │            │      │                │      │ Set temp/tokens│      │ comparison     │
+  └────────────┘      └────────────────┘      └────────────────┘      └────────────────┘
+    /                    /suites/:id/edit        /suites/:id/run        /runs/:id
+```
+
+---
 
 ## Quickstart
 
-**Backend** — test and deploy:
+### Backend
 
 ```bash
-cd backend && .venv/bin/python -m pytest tests/ -q   # 202 tests
-cd .. && ./sam build && ./sam deploy --guided       # deploy (stack: promptlens)
+cd backend
+python3.11 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python -m pytest tests/ -q          # 202 tests pass
 ```
 
-**Frontend** — run locally:
+### Frontend
 
 ```bash
 cd frontend
 npm install
-cp .env.example .env    # set VITE_API_BASE_URL to your deployed API URL
-npm run dev
+cp .env.example .env    # set VITE_API_BASE_URL
+npm run dev             # http://localhost:5173
 ```
 
-To seed the demo suite ("Customer Support Replies", 3 cases), see `backend/README.md`.
-
-## Deploy to production
-
-### 1. Deploy the backend (SAM)
+### Seed demo data
 
 ```bash
-./sam build
-./sam deploy --guided \
+cd backend
+.venv/bin/python -m src.handlers.api.seed
+```
+
+Creates "Customer Support Replies" suite with 3 cases.
+
+---
+
+## Deploy to Production
+
+### 1. Deploy backend (SAM)
+
+```bash
+cd backend
+../sam build
+../sam deploy --guided \
   --parameter-overrides AmplifyDomain=https://main.dXXXXXX.amplifyapp.com
 ```
 
-Follow the guided prompts. Stack name: `promptlens`.
+Stack name: `promptlens`. Follow guided prompts.
 
 ### 2. Get the API endpoint
 
 ```bash
 aws cloudformation describe-stacks --stack-name promptlens \
-  --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue" --output text
+  --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue" \
+  --output text
 ```
 
-### 3. Deploy the frontend (Amplify)
+### 3. Deploy frontend (Amplify)
 
-1. Push this repo to GitHub
-2. In the AWS Amplify console, connect the GitHub repo
-3. Set the build environment variable `VITE_API_BASE_URL` to the API endpoint from step 2
-4. Deploy — Amplify provides a public URL
+1. Push repo to GitHub
+2. AWS Amplify console → connect GitHub repo
+3. Set env var `VITE_API_BASE_URL` = API endpoint from step 2
+4. Deploy → Amplify provides public URL
 
-### 5. Verify
+### 4. Verify
 
 ```bash
 curl <api-endpoint>/health
-# Open the Amplify URL in a browser and run the seeded demo
+# Open Amplify URL → seeded demo should work end-to-end
 ```
 
-## Architecture
+---
 
-See `docs/architecture.md` for the full diagram.
+## Validation Limits
 
-- **DynamoDB**: single-table design, PK/SK pattern (`SUITE#`, `CASE#`, `RUN#`)
-- **Lambda**: Python 3.11, least-privilege IAM, synchronous run execution (max 3 cases)
-- **API Gateway**: REST API with CORS (restricted to Amplify domain)
-- **Bedrock**: prompt execution + rubric evaluation, invoked server-side only
-- **CloudWatch**: structured logging (IDs, sizes, durations — no raw prompts/outputs)
+| Parameter | Min | Max | Default |
+|-----------|-----|-----|---------|
+| `baselinePrompt` | — | 10,000 chars | required |
+| `candidatePrompt` | — | 10,000 chars | required |
+| `temperature` | 0.0 | 1.0 | 0.7 |
+| `maxTokens` | 1 | 4,096 | 1,024 |
+| `caseIds` per run | 1 | 3 | auto-select first 3 |
+
+---
 
 ## Cost & Security
 
-- DynamoDB PAY_PER_REQUEST, Lambda/API per-request — dev/testing < $5/month
-- No auth in MVP (post-MVP scope); no credentials in frontend
-- CORS restricted to Amplify domain via `AmplifyDomain` template parameter
-- Validation: prompts max 10,000 chars, temperature 0–1, maxTokens 1–4096, max 3 cases per run
+**Cost:** < $5/month for light usage (< 50 runs). Bedrock costs are model-dependent (Claude 3 Haiku is cheapest).
+
+**Security:**
+- No auth in MVP (post-MVP scope)
+- No credentials in frontend — Bedrock invoked server-side only
+- CORS restricted to Amplify domain via `AmplifyDomain` parameter
+- CloudWatch logs contain IDs and sizes only — no raw prompts or outputs
+
+---
 
 ## Cleanup
 
 ```bash
 ./sam delete --stack-name promptlens
 ```
+
+---
+
+## Further Reading
+
+- [`docs/architecture.md`](docs/architecture.md) — full architecture reference (DynamoDB design, API endpoints, data models, security)
+- [`docs/adr/0001-0004`](docs/adr/) — architecture decision records
+- [`CONTEXT.md`](CONTEXT.md) — domain model glossary
+- [`backend/README.md`](backend/README.md) — backend setup details
+- [`frontend/README.md`](frontend/README.md) — frontend setup details
