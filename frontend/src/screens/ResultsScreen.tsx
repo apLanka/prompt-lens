@@ -105,6 +105,7 @@ export default function ResultsScreen() {
                 <li key={r.caseId} className="result-item">
                   <div className="result-header">
                     <ClassificationBadge classification={r.classification} />
+                    {r.truncated && <span className="truncated-badge" title="One or more outputs were truncated (reached max token limit)">⚠ truncated</span>}
                     {r.tags.length > 0 && r.tags.map((t) => <span key={t} className="tag">{t}</span>)}
                     {r.error && <span className="result-error" title={r.error}>Error — see details</span>}
                   </div>

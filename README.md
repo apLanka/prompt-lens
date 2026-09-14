@@ -8,7 +8,7 @@ A lightweight prompt-regression testing workspace for AI engineers. Compares two
 prompt-lens/
 ├── backend/    # Python 3.11 Lambda + SAM (API, DynamoDB, Bedrock)
 ├── frontend/   # React + TypeScript + Vite
-├── docs/       # ADRs and implementation plans
+├── docs/       # ADRs, architecture diagram, implementation plans
 └── sam         # SAM CLI wrapper (runs in backend/)
 ```
 
@@ -19,7 +19,7 @@ See `backend/README.md` and `frontend/README.md` for package-specific setup.
 **Backend** — test and deploy:
 
 ```bash
-cd backend && .venv/bin/python -m pytest tests/ -q   # 183 tests
+cd backend && .venv/bin/python -m pytest tests/ -q   # 202 tests
 cd .. && ./sam build && ./sam deploy --guided       # deploy (stack: promptlens)
 ```
 
@@ -34,26 +34,55 @@ npm run dev
 
 To seed the demo suite ("Customer Support Replies", 3 cases), see `backend/README.md`.
 
-## Verify deployment
+## Deploy to production
+
+### 1. Deploy the backend (SAM)
+
+```bash
+./sam build
+./sam deploy --guided \
+  --parameter-overrides AmplifyDomain=https://main.dXXXXXX.amplifyapp.com
+```
+
+Follow the guided prompts. Stack name: `promptlens`.
+
+### 2. Get the API endpoint
 
 ```bash
 aws cloudformation describe-stacks --stack-name promptlens \
   --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue" --output text
+```
 
+### 3. Deploy the frontend (Amplify)
+
+1. Push this repo to GitHub
+2. In the AWS Amplify console, connect the GitHub repo
+3. Set the build environment variable `VITE_API_BASE_URL` to the API endpoint from step 2
+4. Deploy — Amplify provides a public URL
+
+### 5. Verify
+
+```bash
 curl <api-endpoint>/health
+# Open the Amplify URL in a browser and run the seeded demo
 ```
 
 ## Architecture
 
+See `docs/architecture.md` for the full diagram.
+
 - **DynamoDB**: single-table design, PK/SK pattern (`SUITE#`, `CASE#`, `RUN#`)
 - **Lambda**: Python 3.11, least-privilege IAM, synchronous run execution (max 3 cases)
-- **API Gateway**: REST API with CORS
+- **API Gateway**: REST API with CORS (restricted to Amplify domain)
 - **Bedrock**: prompt execution + rubric evaluation, invoked server-side only
+- **CloudWatch**: structured logging (IDs, sizes, durations — no raw prompts/outputs)
 
 ## Cost & Security
 
 - DynamoDB PAY_PER_REQUEST, Lambda/API per-request — dev/testing < $5/month
-- No auth in MVP (post-MVP scope); no credentials in frontend; CORS open until Feature 7 locks it to the Amplify domain
+- No auth in MVP (post-MVP scope); no credentials in frontend
+- CORS restricted to Amplify domain via `AmplifyDomain` template parameter
+- Validation: prompts max 10,000 chars, temperature 0–1, maxTokens 1–4096, max 3 cases per run
 
 ## Cleanup
 

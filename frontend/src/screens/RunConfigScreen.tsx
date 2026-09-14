@@ -12,6 +12,8 @@ const MODELS = [
 const DEFAULT_RUBRIC =
   "Rate how well the response addresses the customer's issue: empathy, accuracy, and actionability. 5 = excellent, 1 = poor.";
 
+const MAX_PROMPT_LENGTH = 10000;
+
 export default function RunConfigScreen() {
   const { suiteId } = useParams<{ suiteId: string }>();
   const navigate = useNavigate();
@@ -53,9 +55,13 @@ export default function RunConfigScreen() {
     setSelectedCases(next);
   };
 
+  const baselineTooLong = baselinePrompt.length > MAX_PROMPT_LENGTH;
+  const candidateTooLong = candidatePrompt.length > MAX_PROMPT_LENGTH;
+
   const canSubmit =
     selectedCases.size > 0 &&
-    baselinePrompt.trim() && candidatePrompt.trim() && rubric.trim();
+    baselinePrompt.trim() && candidatePrompt.trim() && rubric.trim() &&
+    !baselineTooLong && !candidateTooLong;
 
   const launch = async () => {
     if (!suiteId || !canSubmit) return;
@@ -83,6 +89,13 @@ export default function RunConfigScreen() {
     <div className="screen">
       <h1>New run — {suite.name}</h1>
       <ErrorBanner message={error} />
+      {(baselineTooLong || candidateTooLong) && (
+        <div className="validation-error">
+          Prompts must be under {MAX_PROMPT_LENGTH.toLocaleString()} characters.
+          {baselineTooLong && ` Baseline is ${baselinePrompt.length.toLocaleString()}.`}
+          {candidateTooLong && ` Candidate is ${candidatePrompt.length.toLocaleString()}.`}
+        </div>
+      )}
       <p><Link to={`/suites/${suiteId}/edit`}>← Back to suite</Link></p>
 
       <div className="run-config-grid">
@@ -95,6 +108,9 @@ export default function RunConfigScreen() {
               onChange={(e) => setBaselinePrompt(e.target.value)}
               placeholder="You are a customer support agent…"
             />
+            <small className={baselineTooLong ? "char-over" : ""}>
+              {baselinePrompt.length.toLocaleString()} / {MAX_PROMPT_LENGTH.toLocaleString()} characters
+            </small>
           </label>
           <label>
             Candidate prompt
@@ -103,6 +119,9 @@ export default function RunConfigScreen() {
               onChange={(e) => setCandidatePrompt(e.target.value)}
               placeholder="You are a customer support agent. Improvements…"
             />
+            <small className={candidateTooLong ? "char-over" : ""}>
+              {candidatePrompt.length.toLocaleString()} / {MAX_PROMPT_LENGTH.toLocaleString()} characters
+            </small>
           </label>
         </div>
 

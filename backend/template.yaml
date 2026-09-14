@@ -2,6 +2,14 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: PromptLens - Prompt Regression Testing Tool
 
+Parameters:
+  AmplifyDomain:
+    Type: String
+    Default: "*"
+    Description: >-
+      CORS allowed origin. Set to your Amplify URL (e.g. https://main.d1234abc.amplifyapp.com)
+      when deploying to production. Leave as "*" for local development.
+
 Globals:
   Function:
     Timeout: 30
@@ -20,7 +28,7 @@ Resources:
       Cors:
         AllowMethods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
         AllowHeaders: "'Content-Type,Authorization'"
-        AllowOrigin: "'*'"
+        AllowOrigin: !Sub "'${AmplifyDomain}'"
       TracingEnabled: true
 
   ApiFunction:
