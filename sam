@@ -1,3 +1,5 @@
 #!/bin/bash
-# SAM CLI wrapper using Python 3.11 venv
+# SAM CLI wrapper — runs SAM from backend/ (template + code live there).
+# SAM CLI itself lives in ~/.sam-cli-env (Homebrew Python 3.14 is broken).
+cd "$(dirname "$0")/backend" || exit 1
 exec ~/.sam-cli-env/bin/sam "$@"

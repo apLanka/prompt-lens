@@ -1,0 +1,11 @@
+# SAM build exclusions (relative to backend/)
+.git/
+README.md
+requirements.txt
+template.yaml
+tests/
+.venv/
+__pycache__/
+*.pyc
+.samignore
+.pytest_cache/
