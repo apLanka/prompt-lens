@@ -30,6 +30,7 @@ export interface Run {
   maxTokens: number;
   createdAt: string;
   completedAt?: string;
+  invocations?: number;
 }
 
 export interface RunCaseResult {
@@ -46,6 +47,7 @@ export interface RunCaseResult {
   candidateLatencyMs?: number;
   error?: string;
   tags: string[];
+  truncated: boolean;
 }
 
 export interface Summary {
