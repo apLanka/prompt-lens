@@ -1,6 +1,7 @@
 """Run route handlers."""
 
 import json
+import logging
 from typing import Any, Dict, List, Optional
 
 from ..models import Run, RunCaseResult
@@ -14,7 +15,7 @@ from ..dynamodb import (
     get_suite,
     get_cases,
 )
-from ..bedrock import invoke_model, evaluate_output, classify_result
+from ..bedrock import invoke_model, evaluate_output, classify_result, detect_truncation
 
 _DEFAULT_HEADERS = {
     "Content-Type": "application/json",
@@ -22,6 +23,13 @@ _DEFAULT_HEADERS = {
 }
 
 MAX_CASES_PER_RUN = 3
+MAX_PROMPT_LENGTH = 10000
+MIN_TEMPERATURE = 0.0
+MAX_TEMPERATURE = 1.0
+MIN_MAX_TOKENS = 1
+MAX_MAX_TOKENS = 4096
+
+logger = logging.getLogger(__name__)
 
 
 def _response(
@@ -107,6 +115,55 @@ def create_run_handler(event: Dict[str, Any]) -> Dict[str, Any]:
             ),
         )
 
+    if len(baseline_prompt) > MAX_PROMPT_LENGTH:
+        return _response(
+            400,
+            json.dumps(
+                {
+                    "message": f"baselinePrompt exceeds max length of {MAX_PROMPT_LENGTH} characters"
+                }
+            ),
+        )
+    if len(candidate_prompt) > MAX_PROMPT_LENGTH:
+        return _response(
+            400,
+            json.dumps(
+                {
+                    "message": f"candidatePrompt exceeds max length of {MAX_PROMPT_LENGTH} characters"
+                }
+            ),
+        )
+
+    temperature = body.get("temperature", 0.7)
+    if (
+        not isinstance(temperature, (int, float))
+        or temperature < MIN_TEMPERATURE
+        or temperature > MAX_TEMPERATURE
+    ):
+        return _response(
+            400,
+            json.dumps(
+                {
+                    "message": f"temperature must be between {MIN_TEMPERATURE} and {MAX_TEMPERATURE}"
+                }
+            ),
+        )
+
+    max_tokens = body.get("maxTokens", 1024)
+    if (
+        not isinstance(max_tokens, int)
+        or max_tokens < MIN_MAX_TOKENS
+        or max_tokens > MAX_MAX_TOKENS
+    ):
+        return _response(
+            400,
+            json.dumps(
+                {
+                    "message": f"maxTokens must be between {MIN_MAX_TOKENS} and {MAX_MAX_TOKENS}"
+                }
+            ),
+        )
+
     suite = get_suite(suite_id)
     if not suite:
         return _response(404, json.dumps({"message": "Suite not found"}))
@@ -116,7 +173,16 @@ def create_run_handler(event: Dict[str, Any]) -> Dict[str, Any]:
         return _response(400, json.dumps({"message": "caseIds must be a list"}))
 
     all_cases = get_cases(suite_id)
-    if case_ids:
+    if case_ids is not None:
+        if len(case_ids) == 0:
+            return _response(400, json.dumps({"message": "caseIds must not be empty"}))
+        if len(case_ids) > MAX_CASES_PER_RUN:
+            return _response(
+                400,
+                json.dumps(
+                    {"message": f"caseIds exceeds max of {MAX_CASES_PER_RUN} cases"}
+                ),
+            )
         cases = [c for c in all_cases if c.case_id in case_ids][:MAX_CASES_PER_RUN]
         if not cases:
             return _response(
@@ -149,7 +215,9 @@ def create_run_handler(event: Dict[str, Any]) -> Dict[str, Any]:
         update_run_status(run.run_id, "FAILED")
         run = get_run(run.run_id)
 
-    return _response(201, json.dumps(run.to_response()))
+    response_body = run.to_response()
+    response_body["invocations"] = len(cases) * 4
+    return _response(201, json.dumps(response_body))
 
 
 def _compute_summary(results: list) -> dict:
@@ -215,6 +283,10 @@ def execute_run(run: Run, cases: list) -> None:
         run: The run to execute
         cases: List of cases to test
     """
+    logger.info(
+        "run_started",
+        extra={"run_id": run.run_id, "model_id": run.model_id, "cases": len(cases)},
+    )
     successful_results = 0
     total_cases = len(cases)
 
@@ -251,6 +323,10 @@ def execute_run(run: Run, cases: list) -> None:
                 candidate_score=candidate_eval["score"],
             )
 
+            truncated = detect_truncation(
+                baseline_output, run.max_tokens
+            ) or detect_truncation(candidate_output, run.max_tokens)
+
             result = RunCaseResult(
                 run_id=run.run_id,
                 case_id=case.case_id,
@@ -264,6 +340,7 @@ def execute_run(run: Run, cases: list) -> None:
                 candidate_latency_ms=candidate_latency,
                 classification=classification,
                 tags=case.tags,
+                truncated=truncated,
             )
 
             create_run_case_result(result)
@@ -285,3 +362,13 @@ def execute_run(run: Run, cases: list) -> None:
         update_run_status(run.run_id, "PARTIAL")
     else:
         update_run_status(run.run_id, "FAILED")
+
+    logger.info(
+        "run_completed",
+        extra={
+            "run_id": run.run_id,
+            "model_id": run.model_id,
+            "cases_total": total_cases,
+            "cases_succeeded": successful_results,
+        },
+    )

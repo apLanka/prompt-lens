@@ -3,9 +3,12 @@
 import json
 import os
 import time
+import logging
 from typing import Tuple, Optional
 import boto3
 from botocore.exceptions import ClientError
+
+logger = logging.getLogger(__name__)
 
 
 def get_bedrock_client():
@@ -178,3 +181,13 @@ def classify_result(baseline_score: int, candidate_score: int) -> str:
         return "Regressed"
     else:
         return "Unchanged"
+
+
+def detect_truncation(output: str, max_tokens: int) -> bool:
+    """Heuristic: output is likely truncated if it reaches max token count
+    and doesn't end with a natural stop character (., !, ?, newline, quote).
+    """
+    if not output:
+        return False
+    stop_chars = {".", "!", "?", "\n", '"', "'", ":", ";"}
+    return len(output) >= max_tokens and output[-1] not in stop_chars

@@ -23,6 +23,7 @@ class RunCaseResult:
     )
     error: Optional[str] = None
     tags: Optional[List[str]] = None
+    truncated: bool = False
 
     def to_dict(self) -> dict:
         """Convert to dictionary for DynamoDB storage."""
@@ -51,6 +52,7 @@ class RunCaseResult:
             result["error"] = self.error
         if self.tags is not None:
             result["tags"] = self.tags
+        result["truncated"] = self.truncated
         return result
 
     def to_response(self) -> dict:
@@ -80,6 +82,7 @@ class RunCaseResult:
             result["error"] = self.error
         if self.tags is not None:
             result["tags"] = self.tags
+        result["truncated"] = self.truncated
         return result
 
     @classmethod
@@ -99,4 +102,5 @@ class RunCaseResult:
             classification=data.get("classification", "Needs review"),
             error=data.get("error"),
             tags=data.get("tags"),
+            truncated=data.get("truncated", False),
         )
