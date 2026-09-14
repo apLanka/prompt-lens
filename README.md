@@ -6,31 +6,25 @@ A lightweight prompt-regression testing workspace for AI engineers. Compares two
 
 ## Architecture
 
-```
-                           ┌─────────────────────────────────┐
-                           │          AWS Cloud               │
-                           │                                  │
- ┌───────────────┐        │  ┌──────────────────────────┐   │
- │               │        │  │    API Gateway (REST)     │   │
- │   Amplify     │ HTTPS  │  │    Stage: Prod            │   │
- │   ┌────────┐  │◀──────▶│  │    CORS: Amplify domain   │   │
- │   │ React  │  │        │  └────────────┬─────────────┘   │
- │   │ + Vite │  │        │               │                  │
- │   └────────┘  │        │        ┌──────▼──────┐          │
- │               │        │        │   Lambda     │          │
- └───────────────┘        │        │  Python 3.11 │          │
-                          │        │  256MB / 30s  │          │
-                          │        └──────┬──────┘          │
-                          │               │                  │
-                          │    ┌──────────┼──────────┐      │
-                          │    │          │          │      │
-                          │ ┌──▼───┐ ┌───▼───┐ ┌───▼────┐ │
-                          │ │Dynamo│ │Bedrock│ │Cloud-  │ │
-                          │ │DB    │ │       │ │Watch   │ │
-                          │ │single│ │invoke │ │logs    │ │
-                          │ │table │ │eval   │ │        │ │
-                          │ └──────┘ └───────┘ └────────┘ │
-                          └─────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph "Client"
+        A[React + Vite<br/>Amplify Hosting]
+    end
+
+    subgraph "AWS Cloud"
+        B[API Gateway<br/>REST · CORS]
+        C[Lambda<br/>Python 3.11<br/>256MB / 30s]
+        D[(DynamoDB<br/>Single Table<br/>PAY_PER_REQUEST)]
+        E[Bedrock<br/>InvokeModel<br/>Server-side only]
+        F[CloudWatch<br/>Structured Logs]
+    end
+
+    A -->|HTTPS| B
+    B --> C
+    C --> D
+    C --> E
+    C --> F
 ```
 
 **Full reference:** [`docs/architecture.md`](docs/architecture.md)
@@ -41,86 +35,71 @@ A lightweight prompt-regression testing workspace for AI engineers. Compares two
 
 ### Run Execution (per case)
 
-```
-  User clicks "Run comparison"
-          │
-          ▼
-  ┌──────────────────┐
-  │ POST /runs       │  Validate input, create RUN# in DynamoDB
-  │ (201 + runId)    │
-  └────────┬─────────┘
-           │
-           ▼
-  ┌──────────────────┐
-  │ invoke_model()   │  Baseline prompt + case input → Bedrock
-  │ (baseline)       │  → baseline_output, latency_ms
-  └────────┬─────────┘
-           │
-           ▼
-  ┌──────────────────┐
-  │ invoke_model()   │  Candidate prompt + case input → Bedrock
-  │ (candidate)      │  → candidate_output, latency_ms
-  └────────┬─────────┘
-           │
-           ▼
-  ┌──────────────────┐
-  │ evaluate_output()│  Baseline output + rubric → Bedrock evaluator
-  │ (baseline eval)  │  → score (1-5), confidence, rationale
-  └────────┬─────────┘
-           │
-           ▼
-  ┌──────────────────┐
-  │ evaluate_output()│  Candidate output + rubric → Bedrock evaluator
-  │ (candidate eval) │  → score (1-5), confidence, rationale
-  └────────┬─────────┘
-           │
-           ▼
-  ┌──────────────────┐
-  │ classify_result()│  Compare scores → Improved / Regressed / Unchanged
-  └────────┬─────────┘
-           │
-           ▼
-  ┌──────────────────┐
-  │ Write RESULT#    │  Store RunCaseResult in DynamoDB
-  │ to DynamoDB      │  (includes truncated flag if output hit max tokens)
-  └──────────────────┘
+```mermaid
+flowchart TD
+    A[User clicks Run comparison] --> B[POST /runs]
+    B --> C{Validate input}
+    C -->|invalid| D[400 error]
+    C -->|valid| E[Create RUN# in DynamoDB]
+    E --> F[invoke_model — baseline]
+    F --> G[invoke_model — candidate]
+    G --> H[evaluate_output — baseline]
+    H --> I[evaluate_output — candidate]
+    I --> J{classify_result}
+    J -->|candidate > baseline| K[Improved]
+    J -->|candidate < baseline| L[Regressed]
+    J -->|candidate = baseline| M[Unchanged]
+    K --> N[Write RESULT# to DynamoDB]
+    L --> N
+    M --> N
 
-  × 4 Bedrock calls per case  ×  max 3 cases per run  =  12 invocations max
+    style A fill:#e0f2fe
+    style D fill:#fef2f2
+    style K fill:#dcfce7
+    style L fill:#fef2f2
+    style M fill:#f3f4f6
+    style N fill:#e0f2fe
 ```
+
+> **4 Bedrock calls per case** × max 3 cases per run = **12 invocations max**
 
 ### DynamoDB Key Pattern
 
-```
-  Table: PromptLens
-  ─────────────────────────────────────────────────────────────
-  PK                      │ SK                    │ Contains
-  ────────────────────────┼───────────────────────┼──────────────
-  SUITE#<id>              │ METADATA              │ Suite name, timestamps
-  SUITE#<id>              │ CASE#<id>             │ Input, expected behavior, tags
-  RUN#<id>                │ METADATA              │ Model, prompts, rubric, status
-  RUN#<id>                │ RESULT#<caseId>       │ Outputs, scores, classification
-  ─────────────────────────────────────────────────────────────
+```mermaid
+graph LR
+    subgraph "Table: PromptLens"
+        direction TB
+        S1["SUITE#abc123<br/>METADATA"] -->|owns| C1["SUITE#abc123<br/>CASE#def456"]
+        S1 -->|owns| C2["SUITE#abc123<br/>CASE#ghi789"]
+        R1["RUN#xyz789<br/>METADATA"] -->|produces| RR1["RUN#xyz789<br/>RESULT#def456"]
+        R1 -->|produces| RR2["RUN#xyz789<br/>RESULT#ghi789"]
+    end
 
-  GSI: SK-index  (SK = HASH, PK = RANGE)
-  ─────────────────────────────────────────────────────────────
-  Enables:  query all RESULT# items across runs
-            filter by classification
-  ─────────────────────────────────────────────────────────────
+    subgraph "GSI: SK-index"
+        direction TB
+        G1["SK = RESULT#*<br/>PK = RUN#*"] -.->|enables| Q1["Query all results<br/>across runs"]
+    end
 ```
+
+| PK | SK | Contains |
+|----|----|----------|
+| `SUITE#<id>` | `METADATA` | Suite name, timestamps |
+| `SUITE#<id>` | `CASE#<id>` | Input, expected behavior, tags |
+| `RUN#<id>` | `METADATA` | Model, prompts, rubric, status |
+| `RUN#<id>` | `RESULT#<caseId>` | Outputs, scores, classification |
 
 ### Frontend Screens
 
-```
-  ┌────────────┐      ┌────────────────┐      ┌────────────────┐      ┌────────────────┐
-  │            │      │                │      │                │      │                │
-  │   Home     │─────▶│  Suite Editor  │─────▶│  Run Config    │─────▶│    Results     │
-  │            │      │                │      │                │      │                │
-  │ List suites│      │ Edit suite name│      │ Pick model     │      │ Summary cards  │
-  │ Create new │      │ Add/edit/delete│      │ Write prompts  │      │ Filters        │
-  │            │      │ cases          │      │ Select cases   │      │ Side-by-side   │
-  │            │      │                │      │ Set temp/tokens│      │ comparison     │
-  └────────────┘      └────────────────┘      └────────────────┘      └────────────────┘
-    /                    /suites/:id/edit        /suites/:id/run        /runs/:id
+```mermaid
+graph LR
+    H[Home<br/>/] --> SE[Suite Editor<br/>/suites/:id/edit]
+    SE --> RC[Run Config<br/>/suites/:id/run]
+    RC --> R[Results<br/>/runs/:id]
+
+    style H fill:#e0f2fe
+    style SE fill:#f0f9ff
+    style RC fill:#f0f9ff
+    style R fill:#dcfce7
 ```
 
 ---
