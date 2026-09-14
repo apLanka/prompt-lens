@@ -5,6 +5,7 @@ import App from "./App";
 import HomeScreen from "./screens/HomeScreen";
 import SuiteEditorScreen from "./screens/SuiteEditorScreen";
 import RunConfigScreen from "./screens/RunConfigScreen";
+import ResultsScreen from "./screens/ResultsScreen";
 import "./styles.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -15,7 +16,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           <Route index element={<HomeScreen />} />
           <Route path="suites/:suiteId/edit" element={<SuiteEditorScreen />} />
           <Route path="suites/:suiteId/run" element={<RunConfigScreen />} />
-          <Route path="runs/:runId" element={<HomeScreen />} />
+          <Route path="runs/:runId" element={<ResultsScreen />} />
         </Route>
       </Routes>
     </BrowserRouter>
