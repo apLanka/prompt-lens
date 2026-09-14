@@ -1,32 +1,34 @@
-# React + TypeScript + Vite
+# PromptLens Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React + TypeScript + Vite frontend for PromptLens, a prompt-regression testing tool.
 
-Currently, two official plugins are available:
+## Setup
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+cd frontend
+npm install
+cp .env.example .env   # then set your deployed API URL
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+The dev server reads `VITE_API_BASE_URL` at build time (see `.env.example`).
+
+## Screens
+
+- `/` — Home: suite list, create suite
+- `/suites/:suiteId/edit` — Suite Editor: rename suite, manage cases
+- `/suites/:suiteId/run` — Run Config: prompts, model, settings, case selection (max 3)
+- `/runs/:runId` — Results: summary cards, filters, side-by-side comparison
+
+## Testing
+
+```bash
+npm run build   # type check + production build
+npx vitest run  # unit tests (API client)
+```
+
+## Constraints
+
+- No AWS credentials or Bedrock configuration in frontend code
+- All model invocations go through the backend API
+- MVP: 3 cases per run, 2 model options

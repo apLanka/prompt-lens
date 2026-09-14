@@ -97,3 +97,7 @@ aws cloudformation describe-stack-events --stack-name promptlens
 # Check Lambda logs
 sam logs -n PromptLensApi --stack-name promptlens --tail
 ```
+
+## Frontend
+
+The React frontend lives in `frontend/`. See `frontend/README.md` for setup. The API base URL is configured via `VITE_API_BASE_URL` (see `.env.example`).
