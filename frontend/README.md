@@ -22,10 +22,10 @@ The dev server reads `VITE_API_BASE_URL` at build time (see `.env.example`).
 
 ## Demo data
 
-To seed the demo suite ("Customer Support Replies" with 3 cases), run against the configured table:
+To seed the demo suite ("Customer Support Replies" with 3 cases), run from `backend/`:
 
 ```bash
-python -m src.handlers.api.seed
+cd ../backend && .venv/bin/python -m src.handlers.api.seed
 ```
 
 ## Testing
